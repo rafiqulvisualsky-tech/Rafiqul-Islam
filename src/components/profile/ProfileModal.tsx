@@ -321,19 +321,47 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
                 />
               </div>
 
-              {/* Role & Quota Summary Box */}
-              <div className="p-3 bg-cyan-950/30 border border-cyan-500/20 rounded-2xl flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-cyan-400" />
-                  <span className="font-bold text-cyan-300 capitalize">
-                    {currentUser.role === 'agency' || currentUser.role === 'owner' || currentUser.isOwner 
-                      ? 'Agency Master Account (role: agency)' 
-                      : 'Client Customer Account (role: client)'}
+              {/* Role, Plan & Payment Summary Box */}
+              <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                    <span className="font-bold text-slate-200 capitalize">
+                      {currentUser.role === 'agency' || currentUser.role === 'owner' || currentUser.isOwner 
+                        ? 'Agency Master Account (role: agency)' 
+                        : 'Client Customer Account (role: client)'}
+                    </span>
+                  </div>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                    currentUser.role === 'agency' || currentUser.role === 'owner' || currentUser.isOwner
+                      ? 'bg-amber-400 text-slate-950'
+                      : 'bg-cyan-500 text-slate-950'
+                  }`}>
+                    {currentUser.bdtPlanLabel || (currentUser.role === 'agency' ? 'Agency Master (Free Unlimited)' : `${currentUser.plan} Plan`)}
                   </span>
                 </div>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-cyan-500 text-black shadow-xs">
-                  {currentUser.plan} Plan
-                </span>
+
+                {currentUser.paymentInfo && (
+                  <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400">Payment Gateway:</span>
+                      <span className="font-bold text-cyan-400">{currentUser.paymentInfo.method}</span>
+                      <span className="text-slate-500 font-mono">({currentUser.paymentInfo.senderPhone})</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400">TrxID:</span>
+                      <span className="font-mono font-bold text-amber-300">{currentUser.paymentInfo.trxId}</span>
+                      <span className="font-black text-emerald-400">৳{currentUser.paymentInfo.amountBDT.toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
+
+                {(currentUser.role === 'agency' || currentUser.role === 'owner' || currentUser.isOwner) && (
+                  <div className="text-[10px] text-amber-400/90 pt-1 flex items-center gap-1.5">
+                    <span>👑</span>
+                    <span>100% Free Lifetime Agency Access &bull; Maximum 3 Seats Quota</span>
+                  </div>
+                )}
               </div>
             </div>
           )}

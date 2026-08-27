@@ -199,6 +199,17 @@ export interface CustomerPermissions {
   accountStatus: 'active' | 'suspended' | 'pending';
 }
 
+export interface ClientPaymentInfo {
+  method: 'bKash' | 'Nagad' | 'Rocket';
+  planName: string;
+  amountBDT: number;
+  trxId: string;
+  senderPhone: string;
+  paymentDate: string;
+  status: 'paid' | 'verified' | 'pending';
+  ownerPayoutAccount: string;
+}
+
 export interface UserAccount {
   id: string;
   name: string;
@@ -207,12 +218,14 @@ export interface UserAccount {
   role: 'client' | 'agency' | 'owner' | 'manager' | 'rep' | 'customer';
   isOwner?: boolean;
   plan: 'Free' | 'Pro' | 'Agency' | 'Enterprise';
+  bdtPlanLabel?: string;
   quotaUsed: number;
   quotaLimit: number;
   aiCredits: number;
   company?: string;
   title?: string;
   phone?: string;
+  paymentInfo?: ClientPaymentInfo;
   permissions?: CustomerPermissions;
   joinedAt?: string;
   password?: string;

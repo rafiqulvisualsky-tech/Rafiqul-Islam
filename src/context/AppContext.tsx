@@ -745,11 +745,13 @@ const INITIAL_USERS: UserAccount[] = [
     role: 'agency',
     isOwner: true,
     plan: 'Enterprise',
+    bdtPlanLabel: 'Agency Master Admin (Free Unlimited)',
     quotaUsed: 987,
     quotaLimit: 50000,
     aiCredits: 12450,
     company: 'VisualSky Agency Platform',
     title: 'Agency Principal & Master Admin',
+    phone: '+880 1712-345678',
     joinedAt: '2026-01-01'
   },
   {
@@ -760,11 +762,23 @@ const INITIAL_USERS: UserAccount[] = [
     role: 'client',
     isOwner: false,
     plan: 'Pro',
+    bdtPlanLabel: 'Scale Business (৳৪,৯৯৯/mo)',
     quotaUsed: 315,
     quotaLimit: 5000,
     aiCredits: 2500,
     company: 'Scale Growth Client Account',
     title: 'Client Partner',
+    phone: '+880 1812-345678',
+    paymentInfo: {
+      method: 'bKash',
+      planName: 'Scale Business (৳৪,৯৯৯/mo)',
+      amountBDT: 4999,
+      trxId: 'BKA98X21MN',
+      senderPhone: '+880 1812-345678',
+      paymentDate: '2026-08-01',
+      status: 'verified',
+      ownerPayoutAccount: '01712-345678 (bKash Merchant)'
+    },
     joinedAt: '2026-06-15'
   }
 ];
@@ -829,8 +843,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         const metadata = session.user.user_metadata || {};
-        const role = (metadata.role as 'client' | 'agency') || (session.user.email?.includes('admin') || session.user.email?.includes('agency') ? 'agency' : 'client');
+        const pendingRole = localStorage.getItem('visualsky_pending_oauth_role') as ('client' | 'agency' | null);
+        if (pendingRole) {
+          localStorage.removeItem('visualsky_pending_oauth_role');
+        }
+        let role: 'client' | 'agency' = (metadata.role as 'client' | 'agency') || pendingRole || (session.user.email?.includes('admin') || session.user.email?.includes('agency') ? 'agency' : 'client');
+
+        // Check Agency 3-Seat Quota Limit
+        if (role === 'agency') {
+          const currentAgencyUsers = allUsers.filter(u => (u.role === 'agency' || u.role === 'owner' || Boolean(u.isOwner)) && u.email.toLowerCase() !== session.user.email?.toLowerCase());
+          if (currentAgencyUsers.length >= 3) {
+            role = 'client';
+          }
+        }
+
         const isAgency = role === 'agency';
+        let paymentInfo = metadata.payment_info || null;
+        if (!paymentInfo) {
+          try {
+            const pendingPayment = localStorage.getItem('visualsky_pending_payment_info');
+            if (pendingPayment) {
+              paymentInfo = JSON.parse(pendingPayment);
+              localStorage.removeItem('visualsky_pending_payment_info');
+            }
+          } catch {}
+        }
 
         const syncedUser: UserAccount = {
           id: session.user.id,
@@ -842,12 +879,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           role: role,
           isOwner: isAgency,
           plan: metadata.plan || (isAgency ? 'Enterprise' : 'Pro'),
+          bdtPlanLabel: metadata.bdt_plan_label || (isAgency ? 'Agency Master (Free Unlimited)' : 'Scale Business (৳৪,৯৯৯/mo)'),
           quotaUsed: 0,
           quotaLimit: isAgency ? 50000 : 5000,
           aiCredits: isAgency ? 10000 : 2500,
           company: metadata.company || (isAgency ? 'VisualSky Agency Platform' : 'Client Workspace'),
           title: metadata.title || (isAgency ? 'Agency Principal' : 'Client Member'),
           phone: metadata.phone || '',
+          paymentInfo,
           supabaseId: session.user.id,
           joinedAt: new Date().toISOString().split('T')[0]
         };
@@ -860,14 +899,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
           return [syncedUser, ...prev];
         });
+
+        // Auto-redirect to appropriate dashboard
+        if (isAgency) {
+          setActiveTabState('owner');
+        } else {
+          setActiveTabState('dashboard');
+        }
       }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         const metadata = session.user.user_metadata || {};
-        const role = (metadata.role as 'client' | 'agency') || (session.user.email?.includes('admin') || session.user.email?.includes('agency') ? 'agency' : 'client');
+        const pendingRole = localStorage.getItem('visualsky_pending_oauth_role') as ('client' | 'agency' | null);
+        if (pendingRole) {
+          localStorage.removeItem('visualsky_pending_oauth_role');
+        }
+        let role: 'client' | 'agency' = (metadata.role as 'client' | 'agency') || pendingRole || (session.user.email?.includes('admin') || session.user.email?.includes('agency') ? 'agency' : 'client');
+
+        // Check Agency 3-Seat Quota Limit
+        if (role === 'agency') {
+          const currentAgencyUsers = allUsers.filter(u => (u.role === 'agency' || u.role === 'owner' || Boolean(u.isOwner)) && u.email.toLowerCase() !== session.user.email?.toLowerCase());
+          if (currentAgencyUsers.length >= 3) {
+            role = 'client';
+          }
+        }
+
         const isAgency = role === 'agency';
+        let paymentInfo = metadata.payment_info || null;
+        if (!paymentInfo) {
+          try {
+            const pendingPayment = localStorage.getItem('visualsky_pending_payment_info');
+            if (pendingPayment) {
+              paymentInfo = JSON.parse(pendingPayment);
+              localStorage.removeItem('visualsky_pending_payment_info');
+            }
+          } catch {}
+        }
 
         const syncedUser: UserAccount = {
           id: session.user.id,
@@ -879,17 +948,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           role: role,
           isOwner: isAgency,
           plan: metadata.plan || (isAgency ? 'Enterprise' : 'Pro'),
+          bdtPlanLabel: metadata.bdt_plan_label || (isAgency ? 'Agency Master (Free Unlimited)' : 'Scale Business (৳৪,৯৯৯/mo)'),
           quotaUsed: 0,
           quotaLimit: isAgency ? 50000 : 5000,
           aiCredits: isAgency ? 10000 : 2500,
           company: metadata.company || (isAgency ? 'VisualSky Agency Platform' : 'Client Workspace'),
           title: metadata.title || (isAgency ? 'Agency Principal' : 'Client Member'),
           phone: metadata.phone || '',
+          paymentInfo,
           supabaseId: session.user.id,
           joinedAt: new Date().toISOString().split('T')[0]
         };
 
         setCurrentUserState(syncedUser);
+        setAllUsers(prev => {
+          const exists = prev.some(u => u.email.toLowerCase() === syncedUser.email.toLowerCase() || u.id === syncedUser.id);
+          if (exists) {
+            return prev.map(u => (u.email.toLowerCase() === syncedUser.email.toLowerCase() || u.id === syncedUser.id) ? syncedUser : u);
+          }
+          return [syncedUser, ...prev];
+        });
+
+        // Auto-redirect to appropriate dashboard
+        if (isAgency) {
+          setActiveTabState('owner');
+        } else {
+          setActiveTabState('dashboard');
+        }
       }
     });
 

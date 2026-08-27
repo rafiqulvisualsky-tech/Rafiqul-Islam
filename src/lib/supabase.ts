@@ -29,10 +29,12 @@ export interface SupabaseAuthResponse {
   session?: any;
   error?: string;
   role?: 'client' | 'agency';
+  isRedirecting?: boolean;
 }
 
 /**
- * Sign up with Supabase Authentication saving the user role ('client' or 'agency') in user_metadata
+ * Sign up with Supabase Authentication saving the user role ('client' or 'agency') in user_metadata.
+ * Required fields: Full Name, Email, Phone Number, Password.
  */
 export async function signUpWithSupabase(
   email: string,
@@ -40,23 +42,34 @@ export async function signUpWithSupabase(
   metadata: {
     name: string;
     role: 'client' | 'agency';
-    company?: string;
-    website?: string;
-    phone?: string;
+    phone: string;
     plan?: string;
+    bdtPlanLabel?: string;
+    paymentInfo?: any;
+    company?: string;
     title?: string;
-    targetNiche?: string;
   }
 ): Promise<SupabaseAuthResponse> {
   if (!supabase) {
-    // Graceful fallback for local preview if Supabase env is not configured yet
+    // Graceful persistent fallback for preview environment
+    const simulatedUser = {
+      id: `usr-supa-${Date.now()}`,
+      email,
+      user_metadata: {
+        name: metadata.name,
+        role: metadata.role,
+        phone: metadata.phone,
+        plan: metadata.plan || (metadata.role === 'agency' ? 'Enterprise' : 'Pro'),
+        bdtPlanLabel: metadata.bdtPlanLabel || '',
+        payment_info: metadata.paymentInfo || null,
+        avatar: metadata.role === 'agency'
+          ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+          : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
+      },
+    };
     return {
       success: true,
-      user: {
-        id: `supabase-sim-${Date.now()}`,
-        email,
-        user_metadata: metadata,
-      },
+      user: simulatedUser,
       role: metadata.role,
     };
   }
@@ -69,12 +82,10 @@ export async function signUpWithSupabase(
         data: {
           name: metadata.name,
           role: metadata.role, // 'client' or 'agency'
-          company: metadata.company || '',
-          website: metadata.website || '',
-          phone: metadata.phone || '',
+          phone: metadata.phone,
           plan: metadata.plan || (metadata.role === 'agency' ? 'Enterprise' : 'Pro'),
-          title: metadata.title || '',
-          target_niche: metadata.targetNiche || '',
+          bdt_plan_label: metadata.bdtPlanLabel || '',
+          payment_info: metadata.paymentInfo || null,
           avatar: metadata.role === 'agency'
             ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
             : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'
@@ -108,16 +119,20 @@ export async function signInWithSupabase(
 ): Promise<SupabaseAuthResponse> {
   if (!supabase) {
     // Graceful fallback for local preview
+    const role = preferredRoleFallback || (email.includes('admin') || email.includes('owner') || email.includes('agency') ? 'agency' : 'client');
     return {
       success: true,
       user: {
-        id: `supabase-sim-${Date.now()}`,
+        id: `usr-supa-${Date.now()}`,
         email,
         user_metadata: {
-          role: preferredRoleFallback || (email.includes('admin') || email.includes('owner') || email.includes('agency') ? 'agency' : 'client'),
+          name: email.split('@')[0].replace('.', ' '),
+          role,
+          phone: '+8801700000000',
+          plan: role === 'agency' ? 'Enterprise' : 'Pro'
         },
       },
-      role: preferredRoleFallback || (email.includes('admin') || email.includes('owner') || email.includes('agency') ? 'agency' : 'client'),
+      role,
     };
   }
 
@@ -141,6 +156,88 @@ export async function signInWithSupabase(
     };
   } catch (err: any) {
     return { success: false, error: err?.message || 'Failed to sign in with Supabase' };
+  }
+}
+
+/**
+ * Sign in / Sign up with Google OAuth via Supabase
+ */
+export async function signInWithGoogle(
+  role: 'client' | 'agency',
+  suggestedProfile?: { name?: string; email?: string; phone?: string; paymentInfo?: any }
+): Promise<SupabaseAuthResponse> {
+  // Store role in storage so callback or onAuthStateChange applies the correct role
+  try {
+    localStorage.setItem('visualsky_pending_oauth_role', role);
+    if (suggestedProfile?.paymentInfo) {
+      localStorage.setItem('visualsky_pending_payment_info', JSON.stringify(suggestedProfile.paymentInfo));
+    }
+  } catch {}
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent'
+          }
+        }
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      return { success: true, isRedirecting: true, role };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Google OAuth failed' };
+    }
+  }
+
+  // Graceful simulated Google SSO when Supabase keys are default / preview mode
+  const isAgency = role === 'agency';
+  const googleUser = {
+    id: `google-${Date.now()}`,
+    email: suggestedProfile?.email || (isAgency ? 'admin@visualsky.io' : 'rafiqulvisualsky@gmail.com'),
+    user_metadata: {
+      name: suggestedProfile?.name || (isAgency ? 'Rafiqul (Agency Master)' : 'Rafiqul Islam'),
+      role,
+      phone: suggestedProfile?.phone || '+880 1712-345678',
+      plan: isAgency ? 'Enterprise' : 'Pro',
+      payment_info: suggestedProfile?.paymentInfo || null,
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+      auth_provider: 'google'
+    }
+  };
+
+  return {
+    success: true,
+    user: googleUser,
+    role,
+  };
+}
+
+/**
+ * Reset user password with Supabase
+ */
+export async function resetPasswordWithSupabase(email: string): Promise<{ success: boolean; error?: string }> {
+  if (!supabase) {
+    return { success: true };
+  }
+
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Password reset request failed' };
   }
 }
 

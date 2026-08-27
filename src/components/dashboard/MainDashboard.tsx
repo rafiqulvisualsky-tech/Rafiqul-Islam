@@ -90,11 +90,11 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({ onOpenSendMail, on
 
   const openRatePercent = totalEmailsDispatched > 0 
     ? ((uniqueOpensTracked / totalEmailsDispatched) * 100).toFixed(1) 
-    : '76.4';
+    : '0.0';
 
   const replyRatePercent = totalEmailsDispatched > 0 
     ? ((positiveRepliesLogged / totalEmailsDispatched) * 100).toFixed(1) 
-    : '38.2';
+    : '0.0';
 
   const handleLaunchFollowUp = (days: '7d' | '14d' | '30d') => {
     openFollowUpCohortModal(days);
@@ -323,7 +323,7 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({ onOpenSendMail, on
           <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-950/40 to-slate-950 border border-emerald-500/40 space-y-2 relative">
             <div className="text-[10px] font-bold text-emerald-400 uppercase">Stage 5 &bull; Pipeline</div>
             <div className="text-xs font-bold text-emerald-200">High-Intent Leads</div>
-            <div className="text-2xl font-black text-emerald-400 font-mono">{Math.max(highIntentReplies, 3)}</div>
+            <div className="text-2xl font-black text-emerald-400 font-mono">{highIntentReplies}</div>
             <div className="text-[10px] text-emerald-300 font-bold">Ready to Close</div>
           </div>
         </div>
@@ -673,37 +673,45 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({ onOpenSendMail, on
           </div>
 
           <div className="space-y-3">
-            {threads.filter(t => !t.isTrash).slice(0, 3).map(t => (
-              <div
-                key={t.id}
-                onClick={() => setActiveTab('inbox')}
-                className="p-4 rounded-2xl bg-slate-950/80 hover:bg-slate-800/80 border border-slate-800 transition cursor-pointer space-y-1.5 shadow-inner group"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-slate-100 text-xs group-hover:text-cyan-300 transition">{t.leadName}</span>
-                    <span className="text-[11px] text-slate-400 font-medium">({t.leadCompany})</span>
-                  </div>
-                  <span className="text-[10px] text-slate-500 font-mono">{t.lastMessageDate}</span>
-                </div>
-
-                <div className="text-xs font-semibold text-cyan-300 truncate">
-                  {t.subject}
-                </div>
-
-                <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
-                  {t.lastMessage}
-                </p>
-
-                <div className="flex items-center gap-1.5 pt-1">
-                  {t.labels.map((l, idx) => (
-                    <span key={idx} className="text-[9px] px-2 py-0.5 bg-blue-500/10 text-blue-300 rounded-md border border-blue-500/20 font-semibold">
-                      {l}
-                    </span>
-                  ))}
-                </div>
+            {threads.filter(t => !t.isTrash).length === 0 ? (
+              <div className="p-6 text-center bg-slate-950/60 rounded-2xl border border-dashed border-slate-800 space-y-2">
+                <Inbox className="w-8 h-8 text-slate-600 mx-auto" />
+                <div className="text-xs font-bold text-slate-300">No replies in inbox yet</div>
+                <p className="text-[11px] text-slate-500">When your leads open and respond to outreach emails, their incoming messages will appear here in real-time.</p>
               </div>
-            ))}
+            ) : (
+              threads.filter(t => !t.isTrash).slice(0, 3).map(t => (
+                <div
+                  key={t.id}
+                  onClick={() => setActiveTab('inbox')}
+                  className="p-4 rounded-2xl bg-slate-950/80 hover:bg-slate-800/80 border border-slate-800 transition cursor-pointer space-y-1.5 shadow-inner group"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-100 text-xs group-hover:text-cyan-300 transition">{t.leadName}</span>
+                      <span className="text-[11px] text-slate-400 font-medium">({t.leadCompany})</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">{t.lastMessageDate}</span>
+                  </div>
+
+                  <div className="text-xs font-semibold text-cyan-300 truncate">
+                    {t.subject}
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
+                    {t.lastMessage}
+                  </p>
+
+                  <div className="flex items-center gap-1.5 pt-1">
+                    {t.labels.map((l, idx) => (
+                      <span key={idx} className="text-[9px] px-2 py-0.5 bg-blue-500/10 text-blue-300 rounded-md border border-blue-500/20 font-semibold">
+                        {l}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
 
           <button

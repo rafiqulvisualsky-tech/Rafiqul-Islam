@@ -24,9 +24,12 @@ import {
   Settings,
   Mail,
   Send,
-  Bot
+  Bot,
+  Copy,
+  Phone
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { OWNER_PAYOUT_ACCOUNTS, BDT_CLIENT_PLANS } from '../auth/AuthModal';
 
 export const OwnerPanel: React.FC = () => {
   const { 
@@ -44,6 +47,7 @@ export const OwnerPanel: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'customers' | 'billing' | 'system'>('customers');
   const [selectedPlan, setSelectedPlan] = useState<'Free' | 'Pro' | 'Agency' | 'Enterprise'>(currentUser.plan);
+  const [copiedPayoutNumber, setCopiedPayoutNumber] = useState<string | null>(null);
   
   // Modal for editing customer permissions
   const [editingUser, setEditingUser] = useState<UserAccount | null>(null);
@@ -67,8 +71,8 @@ export const OwnerPanel: React.FC = () => {
   const totalCampaignsCount = campaigns.length;
   const totalSmtpsCount = smtpAccounts.filter(s => !s.isTrash).length;
   
-  // Owner Limit Check (Max 3)
-  const ownerAccounts = allUsers.filter(u => u.role === 'owner' || u.isOwner);
+  // Agency / Owner Limit Check (Strictly Max 3 Seats)
+  const ownerAccounts = allUsers.filter(u => u.role === 'agency' || u.role === 'owner' || Boolean(u.isOwner));
   const ownerCount = ownerAccounts.length;
 
   const handlePlanChange = (plan: 'Free' | 'Pro' | 'Agency' | 'Enterprise') => {
@@ -403,105 +407,207 @@ export const OwnerPanel: React.FC = () => {
         </div>
       )}
 
-      {/* Tab: Billing & Subscription Tiers */}
+      {/* Tab: Billing & Subscription Tiers (Bangladeshi Taka BDT) */}
       {activeTab === 'billing' && (
         <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 md:p-6 space-y-6 shadow-2xl">
-          <div>
-            <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-purple-400" />
-              SaaS Subscription Plan & Quota Management
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Select or upgrade client tiers to increase monthly outbound sending quotas and AI credits.
-            </p>
+          
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-cyan-400" />
+                <span>Client Subscriptions & Direct Merchant Payout Routing (BDT ৳)</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Manage BDT pricing tiers and monitor client subscription payments routed directly to your linked accounts.
+              </p>
+            </div>
+            <span className="self-start sm:self-auto px-2.5 py-1 text-[11px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 rounded-lg">
+              Direct Payout Settlement Active
+            </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {[
-              {
-                tier: 'Free',
-                price: '$0',
-                quota: '500 emails/mo',
-                credits: '50 AI Credits',
-                features: ['1 SMTP Account', 'Standard Lead Scraping', 'Manual Follow-ups']
-              },
-              {
-                tier: 'Pro',
-                price: '$49',
-                quota: '5,000 emails/mo',
-                credits: '250 AI Credits',
-                features: ['3 SMTP Accounts', '7d Smart Follow-ups', 'Automated Warm-up', 'CSV Export']
-              },
-              {
-                tier: 'Agency',
-                price: '$149',
-                quota: '25,000 emails/mo',
-                credits: '1,000 AI Credits',
-                features: ['10 SMTP Accounts', '7d/14d/30d Auto Sequences', 'HTML Signature Builder', 'Live Domain Ping']
-              },
-              {
-                tier: 'Enterprise',
-                price: '$299',
-                quota: '100,000 emails/mo',
-                credits: 'Unlimited AI',
-                features: ['Unlimited SMTP Nodes', 'Gemini 3.7 AI Copilot', 'Dedicated IP Rotation', 'Priority Support'],
-                isPopular: true
-              }
-            ].map((p) => {
-              const isCurrent = currentUser.plan === p.tier;
+          {/* Owner's Linked Payout Accounts in Bangladesh */}
+          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <Crown className="w-4 h-4 text-amber-400" />
+                <span>App Owner's Linked Merchant Accounts (Direct Receivers)</span>
+              </div>
+              <span className="text-[10px] text-slate-400 font-mono">100% Direct Settlement</span>
+            </div>
 
-              return (
-                <div
-                  key={p.tier}
-                  className={`p-5 rounded-3xl border flex flex-col justify-between gap-4 relative transition ${
-                    isCurrent
-                      ? 'bg-gradient-to-b from-indigo-950/40 to-slate-900 border-indigo-500/60 shadow-xl shadow-indigo-500/10'
-                      : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                  }`}
-                >
-                  {p.isPopular && (
-                    <span className="absolute -top-2.5 right-4 px-2.5 py-0.5 text-[9px] font-black uppercase bg-indigo-500 text-white rounded-full shadow">
-                      Recommended
-                    </span>
-                  )}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {(Object.keys(OWNER_PAYOUT_ACCOUNTS) as Array<keyof typeof OWNER_PAYOUT_ACCOUNTS>).map((gKey) => {
+                const acc = OWNER_PAYOUT_ACCOUNTS[gKey];
+                const isCopied = copiedPayoutNumber === acc.cleanNumber;
 
-                  <div className="space-y-3">
-                    <div>
-                      <h3 className="font-bold text-slate-100 text-base">{p.tier} Tier</h3>
-                      <div className="text-2xl font-black text-slate-100 font-mono mt-1">
-                        {p.price} <span className="text-xs text-slate-400 font-sans">/ month</span>
-                      </div>
+                return (
+                  <div 
+                    key={gKey} 
+                    className={`p-3 rounded-xl border ${acc.bgColor} ${acc.borderColor} space-y-2`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className={`text-xs font-black ${acc.textColor}`}>{acc.gatewayName}</span>
+                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-900/80 text-slate-300 border border-slate-800">
+                        Ref: {acc.reference}
+                      </span>
                     </div>
 
-                    <div className="space-y-1 text-xs">
-                      <div className="font-bold text-cyan-400">{p.quota}</div>
-                      <div className="text-slate-400">{p.credits}</div>
+                    <div className="flex items-center justify-between bg-slate-900/90 px-2.5 py-1.5 rounded-lg border border-slate-800">
+                      <span className="font-mono text-xs font-bold text-slate-100">{acc.number}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(acc.cleanNumber);
+                          setCopiedPayoutNumber(acc.cleanNumber);
+                          setTimeout(() => setCopiedPayoutNumber(null), 2000);
+                        }}
+                        className="text-slate-400 hover:text-slate-200 transition"
+                        title="Copy account number"
+                      >
+                        {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
                     </div>
-
-                    <ul className="space-y-1.5 text-[11px] text-slate-300 pt-2 border-t border-slate-800">
-                      {p.features.map((f, i) => (
-                        <li key={i} className="flex items-center gap-1.5">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
-                          <span>{f}</span>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="text-[10px] text-slate-400">{acc.type}</div>
                   </div>
+                );
+              })}
+            </div>
+          </div>
 
-                  <button
-                    onClick={() => handlePlanChange(p.tier as any)}
-                    className={`w-full py-2.5 rounded-xl text-xs font-bold transition shadow ${
-                      isCurrent
-                        ? 'bg-indigo-600 text-white shadow-indigo-600/30'
-                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+          {/* Client Subscription Tiers (BDT ৳) */}
+          <div className="space-y-3">
+            <div className="text-xs font-bold text-slate-300">Client Subscription Plans (BDT ৳)</div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {BDT_CLIENT_PLANS.map((p) => {
+                const isCurrent = currentUser.plan === p.planCode;
+
+                return (
+                  <div
+                    key={p.id}
+                    className={`p-5 rounded-3xl border flex flex-col justify-between gap-4 relative transition ${
+                      p.isPopular
+                        ? 'bg-gradient-to-b from-cyan-950/30 to-slate-900 border-cyan-500/60 shadow-xl shadow-cyan-500/10'
+                        : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
                     }`}
                   >
-                    {isCurrent ? 'Active Current Plan' : `Switch to ${p.tier}`}
-                  </button>
-                </div>
-              );
-            })}
+                    {p.isPopular && (
+                      <span className="absolute -top-2.5 right-4 px-2.5 py-0.5 text-[9px] font-black uppercase bg-cyan-500 text-slate-950 rounded-full shadow">
+                        Most Popular
+                      </span>
+                    )}
+
+                    <div className="space-y-3">
+                      <div>
+                        <h3 className="font-bold text-slate-100 text-base">{p.name}</h3>
+                        <div className="text-2xl font-black text-slate-100 font-mono mt-1">
+                          {p.priceDisplay} <span className="text-xs text-slate-400 font-sans">{p.billingCycle}</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1">{p.description}</p>
+                      </div>
+
+                      <div className="space-y-1 text-xs">
+                        <div className="font-bold text-cyan-400">{p.quotaLimit.toLocaleString()} Outbound Leads / mo</div>
+                        <div className="text-slate-400">{p.aiCredits.toLocaleString()} Gemini AI Credits &bull; {p.maxSmtp} SMTPs</div>
+                      </div>
+
+                      <ul className="space-y-1.5 text-[11px] text-slate-300 pt-2 border-t border-slate-800">
+                        {p.features.map((f, i) => (
+                          <li key={i} className="flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                            <span>{f}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <button
+                      onClick={() => handlePlanChange(p.planCode as any)}
+                      className={`w-full py-2.5 rounded-xl text-xs font-bold transition shadow ${
+                        isCurrent
+                          ? 'bg-cyan-600 text-white shadow-cyan-600/30'
+                          : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                      }`}
+                    >
+                      {isCurrent ? 'Current Workspace Plan' : `Apply ${p.name}`}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
+
+          {/* Recent Client Transactions & Subscriptions Ledger */}
+          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-bold text-slate-200">
+                Recent Client Payments (bKash, Nagad, Rocket Payouts)
+              </div>
+              <span className="text-[10px] text-slate-400">Directly Verified</span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="text-slate-500 border-b border-slate-800 text-[10px] uppercase">
+                    <th className="pb-2">Client / User</th>
+                    <th className="pb-2">Plan</th>
+                    <th className="pb-2">Gateway</th>
+                    <th className="pb-2">Sender Mobile</th>
+                    <th className="pb-2">TrxID</th>
+                    <th className="pb-2">Amount (BDT)</th>
+                    <th className="pb-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                  {allUsers.filter(u => u.paymentInfo).length > 0 ? (
+                    allUsers.filter(u => u.paymentInfo).map((client) => {
+                      const p = client.paymentInfo!;
+                      return (
+                        <tr key={client.id} className="hover:bg-slate-900/50 transition">
+                          <td className="py-2.5 font-medium text-slate-100 flex items-center gap-2">
+                            <img src={client.avatar} alt={client.name} className="w-5 h-5 rounded-full object-cover" />
+                            <div>
+                              <div>{client.name}</div>
+                              <div className="text-[10px] text-slate-500">{client.email}</div>
+                            </div>
+                          </td>
+                          <td className="py-2.5 text-cyan-400 font-semibold">{p.planName}</td>
+                          <td className="py-2.5">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              p.method === 'bKash' 
+                                ? 'bg-pink-500/10 text-pink-400 border border-pink-500/20' 
+                                : p.method === 'Nagad' 
+                                  ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20'
+                                  : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                            }`}>
+                              {p.method}
+                            </span>
+                          </td>
+                          <td className="py-2.5 font-mono text-[11px] text-slate-400">{p.senderPhone}</td>
+                          <td className="py-2.5 font-mono font-bold text-amber-300">{p.trxId}</td>
+                          <td className="py-2.5 font-mono font-black text-emerald-400">৳{p.amountBDT.toLocaleString()}</td>
+                          <td className="py-2.5">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              Paid & Verified
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={7} className="py-4 text-center text-slate-500">
+                        No transactions recorded yet. New client registrations will automatically appear here.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </div>
       )}
 
