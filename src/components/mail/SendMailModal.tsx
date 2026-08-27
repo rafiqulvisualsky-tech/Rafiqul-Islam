@@ -199,12 +199,6 @@ Best regards,`);
     setIsSending(false);
     setIsSuccess(true);
 
-    confetti({
-      particleCount: 60,
-      spread: 70,
-      origin: { y: 0.6 }
-    });
-
     addNotification({
       title: sendMode === 'instant' ? 'Outbound Email Dispatched 🚀' : 'Email Scheduled Successfully ⏰',
       message: `${sendMode === 'instant' ? 'Sent' : 'Scheduled'} outbound email to ${recipientName || recipientEmail} via 100% Primary Inbox Engine.`,

@@ -275,7 +275,6 @@ What specific decision makers should I uncover for you?`,
 
         setMinedLeads(enrichedLeads);
         setSelectedLeadIds(enrichedLeads.map(l => l.id));
-        confetti({ particleCount: 50, spread: 60 });
       } else {
         setErrorMsg('Failed to parse leads. Please try again with adjusted parameters.');
       }

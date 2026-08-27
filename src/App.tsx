@@ -16,6 +16,7 @@ import { OwnerPanel } from './components/owner/OwnerPanel';
 import { TrashManager } from './components/trash/TrashManager';
 import { AuthModal } from './components/auth/AuthModal';
 import { SendMailModal } from './components/mail/SendMailModal';
+import { FloatingNotificationCorner } from './components/notifications/FloatingNotificationCorner';
 import { Lead } from './types';
 import { 
   LayoutDashboard,
@@ -84,13 +85,15 @@ const MainContent: React.FC = () => {
   );
 
   const renderActiveView = () => {
+    const isClientRole = currentUser.role === 'client' || currentUser.role === 'customer';
+    
     // Check if account is suspended
-    if (currentUser.role === 'customer' && currentUser.permissions?.accountStatus === 'suspended') {
+    if (isClientRole && currentUser.permissions?.accountStatus === 'suspended') {
       return renderRestrictedServiceView('Entire Account', <ShieldCheck className="w-10 h-10" />);
     }
 
-    // Check specific module permissions for customers
-    if (currentUser.role === 'customer') {
+    // Check specific module permissions for clients
+    if (isClientRole) {
       if (activeTab === 'generator' && currentUser.permissions?.leadMinerEnabled === false) {
         return renderRestrictedServiceView('AI Lead Miner', <Sparkles className="w-10 h-10" />);
       }
@@ -111,6 +114,9 @@ const MainContent: React.FC = () => {
       }
       if (activeTab === 'analytics' && currentUser.permissions?.analyticsEnabled === false) {
         return renderRestrictedServiceView('Deliverability Radar', <BarChart3 className="w-10 h-10" />);
+      }
+      if (activeTab === 'owner') {
+        return renderRestrictedServiceView('Agency Master Dashboard (Requires Agency Role)', <ShieldCheck className="w-10 h-10" />);
       }
     }
 
@@ -157,10 +163,48 @@ const MainContent: React.FC = () => {
       <div className="flex-1 flex overflow-hidden min-h-0">
         <Sidebar />
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 pb-20 md:pb-6">
-          {renderActiveView()}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 pb-20 md:pb-6 relative">
+          <div className={activeTab === 'dashboard' ? 'block' : 'hidden'}>
+            <MainDashboard onOpenSendMail={() => handleOpenSendMail()} />
+          </div>
+          <div className={activeTab === 'leads' ? 'block' : 'hidden'}>
+            <LeadDirectory onOpenSendMail={(lead) => handleOpenSendMail(lead)} />
+          </div>
+          <div className={activeTab === 'generator' ? 'block' : 'hidden'}>
+            <AILeadGenerator />
+          </div>
+          <div className={activeTab === 'inbox' ? 'block' : 'hidden'}>
+            <SmartInbox />
+          </div>
+          <div className={activeTab === 'sent' || activeTab === 'outbox' ? 'block' : 'hidden'}>
+            <SentMailsTracker />
+          </div>
+          <div className={activeTab === 'campaigns' ? 'block' : 'hidden'}>
+            <CampaignManager />
+          </div>
+          <div className={activeTab === 'templates' ? 'block' : 'hidden'}>
+            <TemplateManager />
+          </div>
+          <div className={activeTab === 'analytics' ? 'block' : 'hidden'}>
+            <AnalyticsView />
+          </div>
+          <div className={activeTab === 'smtp' ? 'block' : 'hidden'}>
+            <SMTPManager />
+          </div>
+          <div className={activeTab === 'ai_copilot' ? 'block' : 'hidden'}>
+            <GeminiAssistant />
+          </div>
+          <div className={activeTab === 'owner' ? 'block' : 'hidden'}>
+            <OwnerPanel />
+          </div>
+          <div className={activeTab === 'trash' ? 'block' : 'hidden'}>
+            <TrashManager />
+          </div>
         </main>
       </div>
+
+      {/* Floating Live Notification HUD in Screen Corner */}
+      <FloatingNotificationCorner />
 
       {/* Mobile Responsive Bottom Navigation Bar */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#090d16]/95 backdrop-blur-lg border-t border-slate-800 flex items-center justify-around px-2 py-2">

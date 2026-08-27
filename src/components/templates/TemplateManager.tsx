@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { EmailTemplate } from '../../types';
 import { 
@@ -21,7 +21,6 @@ import {
   FolderPlus
 } from 'lucide-react';
 import { auditEmailDeliverability } from '../../utils/spamChecker';
-import confetti from 'canvas-confetti';
 
 interface TemplateCategoryItem {
   id: string;
@@ -141,15 +140,12 @@ Best regards,`,
 ];
 
 export const TemplateManager: React.FC = () => {
-  const { setActiveTab, addNotification } = useApp();
-  const [templates, setTemplates] = useState<EmailTemplate[]>(() => {
-    try {
-      const saved = localStorage.getItem('visualsky_templates');
-      return saved ? JSON.parse(saved) : INITIAL_TEMPLATES;
-    } catch {
-      return INITIAL_TEMPLATES;
-    }
-  });
+  const { setActiveTab, addNotification, emailTemplates, setEmailTemplates } = useApp();
+  
+  // Use global emailTemplates as single source of truth (excluding trash)
+  const activeEmailTemplates = useMemo(() => {
+    return emailTemplates.filter(t => !t.isTrash);
+  }, [emailTemplates]);
 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [categories, setCategories] = useState<TemplateCategoryItem[]>(() => {
@@ -163,28 +159,29 @@ export const TemplateManager: React.FC = () => {
   const [showAddCatModal, setShowAddCatModal] = useState<boolean>(false);
   const [newCatLabel, setNewCatLabel] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [activeTemplate, setActiveTemplate] = useState<EmailTemplate>(() => templates[0] || INITIAL_TEMPLATES[0]);
+  const [activeTemplate, setActiveTemplate] = useState<EmailTemplate>(() => activeEmailTemplates[0] || INITIAL_TEMPLATES[0]);
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [templateToDelete, setTemplateToDelete] = useState<EmailTemplate | null>(null);
 
-  // Keep activeTemplate synchronized if current active is deleted
+  // Keep activeTemplate synchronized
   useEffect(() => {
-    if (templates.length > 0) {
+    if (activeEmailTemplates.length > 0) {
       setActiveTemplate(prev => {
-        if (prev && templates.some(t => t.id === prev.id)) {
-          return prev;
+        if (prev && activeEmailTemplates.some(t => t.id === prev.id)) {
+          const matched = activeEmailTemplates.find(t => t.id === prev.id);
+          return matched || prev;
         }
-        return templates[0];
+        return activeEmailTemplates[0];
       });
     }
-  }, [templates.length]);
+  }, [activeEmailTemplates]);
 
   // Edit / Create Form State
   const [editForm, setEditForm] = useState<Partial<EmailTemplate>>({});
 
   const saveToStorage = (list: EmailTemplate[]) => {
-    setTemplates(list);
+    setEmailTemplates(list);
     localStorage.setItem('visualsky_templates', JSON.stringify(list));
   };
 
@@ -214,7 +211,6 @@ export const TemplateManager: React.FC = () => {
     setSelectedCategory(name);
     setNewCatLabel('');
     setShowAddCatModal(false);
-    confetti({ particleCount: 25, spread: 50 });
   };
 
   const handleDeleteCategory = (catId: string, e: React.MouseEvent) => {
@@ -262,12 +258,18 @@ export const TemplateManager: React.FC = () => {
 
     if (editForm.id) {
       // Update existing
-      const updated = templates.map(t => t.id === editForm.id ? { ...t, ...editForm } as EmailTemplate : t);
+      const updated = emailTemplates.map(t => t.id === editForm.id ? { ...t, ...editForm } as EmailTemplate : t);
       saveToStorage(updated);
       const found = updated.find(t => t.id === editForm.id);
       if (found) setActiveTemplate(found);
+      addNotification({
+        title: `Template Updated 📝`,
+        message: `"${editForm.title}" is ready in Smart Inbox & Outreach.`,
+        type: 'system',
+        linkTab: 'templates'
+      });
     } else {
-      // Add new
+      // Add new (prepended to top)
       const created: EmailTemplate = {
         id: `tmpl-${Date.now()}`,
         title: editForm.title || 'Untitled Template',
@@ -280,17 +282,22 @@ export const TemplateManager: React.FC = () => {
         replyRatePercent: 0,
         createdAt: new Date().toISOString().split('T')[0]
       };
-      const updated = [created, ...templates];
+      const updated = [created, ...emailTemplates];
       saveToStorage(updated);
       setActiveTemplate(created);
+      addNotification({
+        title: `New Template Created 📝`,
+        message: `"${created.title}" is now available in Smart Inbox & Single Mailer.`,
+        type: 'system',
+        linkTab: 'templates'
+      });
     }
     setIsEditing(false);
-    confetti({ particleCount: 30, spread: 60 });
   };
 
   const handleDelete = (id?: string) => {
     if (!id) return;
-    const updated = templates.filter(t => t.id !== id);
+    const updated = emailTemplates.filter(t => t.id !== id);
     saveToStorage(updated);
     if (activeTemplate?.id === id && updated.length > 0) {
       setActiveTemplate(updated[0]);
@@ -302,7 +309,7 @@ export const TemplateManager: React.FC = () => {
   const activeBody = isEditing ? (editForm.body || '') : (activeTemplate?.body || '');
   const spamAudit = auditEmailDeliverability(activeSubject, activeBody);
 
-  const filteredTemplates = templates.filter(t => {
+  const filteredTemplates = activeEmailTemplates.filter(t => {
     const matchCat = selectedCategory === 'all' || t.category === selectedCategory;
     const matchSearch = (t.title || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                         (t.subject || '').toLowerCase().includes(searchQuery.toLowerCase()) ||

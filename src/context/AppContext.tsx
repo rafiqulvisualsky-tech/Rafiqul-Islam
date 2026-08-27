@@ -18,6 +18,7 @@ import {
 } from '../types';
 import confetti from 'canvas-confetti';
 import { audioEngine } from '../utils/audioPlayer';
+import { supabase, isSupabaseConfigured, signOutSupabase } from '../lib/supabase';
 
 // Helper to calculate warm-up limits based on gradual +15/day ramp
 export const getSMTPWarmupDetails = (account: SMTPAccount) => {
@@ -175,7 +176,7 @@ interface AppContextType {
   setCurrentUser: (user: UserAccount) => void;
   allUsers: UserAccount[];
   setAllUsers: React.Dispatch<React.SetStateAction<UserAccount[]>>;
-  updateUserRole: (userId: string, role: 'owner' | 'manager' | 'rep' | 'customer') => void;
+  updateUserRole: (userId: string, role: 'client' | 'agency' | 'owner' | 'manager' | 'rep' | 'customer') => void;
   updateUserPermissions: (userId: string, permissions: any) => void;
   deleteUserAccount: (userId: string) => void;
   resetUserPasswordByEmail: (email: string, newPass: string) => boolean;
@@ -737,32 +738,32 @@ const INITIAL_SENT_LOGS: SentEmailLog[] = [
 // Initial Users
 const INITIAL_USERS: UserAccount[] = [
   {
-    id: 'user-owner-1',
-    name: 'Admin Owner',
+    id: 'user-agency-1',
+    name: 'Agency Master Admin',
     email: 'admin@visualsky.io',
     avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    role: 'owner',
+    role: 'agency',
     isOwner: true,
     plan: 'Enterprise',
     quotaUsed: 987,
     quotaLimit: 50000,
     aiCredits: 12450,
-    company: 'VisualSky SaaS Platform',
-    title: 'Founder & Managing Director',
+    company: 'VisualSky Agency Platform',
+    title: 'Agency Principal & Master Admin',
     joinedAt: '2026-01-01'
   },
   {
     id: 'user-client-1',
-    name: 'Alex Vance',
+    name: 'Alex Vance (Client)',
     email: 'client@growthagency.com',
     avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    role: 'customer',
+    role: 'client',
     isOwner: false,
     plan: 'Pro',
     quotaUsed: 315,
     quotaLimit: 5000,
     aiCredits: 2500,
-    company: 'Scale Growth Agency',
+    company: 'Scale Growth Client Account',
     title: 'Client Partner',
     joinedAt: '2026-06-15'
   }
@@ -799,10 +800,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  // Client vs Owner route guard
+  // Client vs Agency / Owner route guard
+  const isAgencyUser = (user: UserAccount) => {
+    return user.role === 'agency' || user.role === 'owner' || Boolean(user.isOwner);
+  };
+
   const setActiveTab = (tab: string) => {
-    // If client tries to access owner panel, redirect to dashboard
-    if (tab === 'owner' && currentUser.role !== 'owner' && !currentUser.isOwner) {
+    // If client tries to access agency master/owner panel, redirect to dashboard
+    if (tab === 'owner' && !isAgencyUser(currentUser)) {
       setActiveTabState('dashboard');
       return;
     }
@@ -811,10 +816,87 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const setCurrentUser = (user: UserAccount) => {
     setCurrentUserState(user);
-    if (user.role !== 'owner' && !user.isOwner && activeTab === 'owner') {
+    if (!isAgencyUser(user) && activeTab === 'owner') {
       setActiveTabState('dashboard');
     }
   };
+
+  // Supabase Auth State Synchronization
+  useEffect(() => {
+    if (!supabase) return;
+
+    // Check existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        const metadata = session.user.user_metadata || {};
+        const role = (metadata.role as 'client' | 'agency') || (session.user.email?.includes('admin') || session.user.email?.includes('agency') ? 'agency' : 'client');
+        const isAgency = role === 'agency';
+
+        const syncedUser: UserAccount = {
+          id: session.user.id,
+          name: metadata.name || session.user.email?.split('@')[0] || (isAgency ? 'Agency Admin' : 'Client User'),
+          email: session.user.email || '',
+          avatar: metadata.avatar || (isAgency
+            ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+            : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'),
+          role: role,
+          isOwner: isAgency,
+          plan: metadata.plan || (isAgency ? 'Enterprise' : 'Pro'),
+          quotaUsed: 0,
+          quotaLimit: isAgency ? 50000 : 5000,
+          aiCredits: isAgency ? 10000 : 2500,
+          company: metadata.company || (isAgency ? 'VisualSky Agency Platform' : 'Client Workspace'),
+          title: metadata.title || (isAgency ? 'Agency Principal' : 'Client Member'),
+          phone: metadata.phone || '',
+          supabaseId: session.user.id,
+          joinedAt: new Date().toISOString().split('T')[0]
+        };
+
+        setCurrentUserState(syncedUser);
+        setAllUsers(prev => {
+          const exists = prev.some(u => u.email.toLowerCase() === syncedUser.email.toLowerCase() || u.id === syncedUser.id);
+          if (exists) {
+            return prev.map(u => (u.email.toLowerCase() === syncedUser.email.toLowerCase() || u.id === syncedUser.id) ? syncedUser : u);
+          }
+          return [syncedUser, ...prev];
+        });
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        const metadata = session.user.user_metadata || {};
+        const role = (metadata.role as 'client' | 'agency') || (session.user.email?.includes('admin') || session.user.email?.includes('agency') ? 'agency' : 'client');
+        const isAgency = role === 'agency';
+
+        const syncedUser: UserAccount = {
+          id: session.user.id,
+          name: metadata.name || session.user.email?.split('@')[0] || (isAgency ? 'Agency Admin' : 'Client User'),
+          email: session.user.email || '',
+          avatar: metadata.avatar || (isAgency
+            ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+            : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'),
+          role: role,
+          isOwner: isAgency,
+          plan: metadata.plan || (isAgency ? 'Enterprise' : 'Pro'),
+          quotaUsed: 0,
+          quotaLimit: isAgency ? 50000 : 5000,
+          aiCredits: isAgency ? 10000 : 2500,
+          company: metadata.company || (isAgency ? 'VisualSky Agency Platform' : 'Client Workspace'),
+          title: metadata.title || (isAgency ? 'Agency Principal' : 'Client Member'),
+          phone: metadata.phone || '',
+          supabaseId: session.user.id,
+          joinedAt: new Date().toISOString().split('T')[0]
+        };
+
+        setCurrentUserState(syncedUser);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   // Lead Tags
   const [leadTags, setLeadTags] = useState<LeadTag[]>(() => {
@@ -1066,15 +1148,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const requestDesktopNotificationPermission = async (): Promise<boolean> => {
-    if (!('Notification' in window)) return false;
-    try {
-      const permission = await Notification.requestPermission();
-      const granted = permission === 'granted';
-      updateNotificationSettings({ desktopPushEnabled: granted });
-      return granted;
-    } catch {
-      return false;
+    let nativeGranted = false;
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      try {
+        // Handle promise & callback styles of Notification.requestPermission
+        const permission = await new Promise<NotificationPermission>((resolve) => {
+          try {
+            const res = Notification.requestPermission((p) => resolve(p));
+            if (res && typeof (res as any).then === 'function') {
+              (res as any).then(resolve).catch(() => resolve('default'));
+            }
+          } catch {
+            resolve('default');
+          }
+        });
+        nativeGranted = permission === 'granted';
+      } catch (err) {
+        console.warn('Native notification permission not available (e.g. running in iframe):', err);
+      }
     }
+    
+    // Always enable in-app floating corner notifications and audio
+    updateNotificationSettings({ desktopPushEnabled: true, soundEnabled: true });
+    return nativeGranted;
   };
 
   // Trigger System / OS desktop notification
@@ -1892,13 +1988,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // User Management
-  const updateUserRole = (userId: string, role: 'owner' | 'manager' | 'rep' | 'customer') => {
-    // Only owner can change roles
-    if (currentUser.role !== 'owner' && !currentUser.isOwner) return;
+  const updateUserRole = (userId: string, role: 'client' | 'agency' | 'owner' | 'manager' | 'rep' | 'customer') => {
+    // Only agency/owner can change roles
+    if (currentUser.role !== 'agency' && currentUser.role !== 'owner' && !currentUser.isOwner) return;
 
-    setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, role, isOwner: role === 'owner' } : u));
+    const isMaster = role === 'agency' || role === 'owner';
+    setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, role, isOwner: isMaster } : u));
     if (currentUser.id === userId) {
-      setCurrentUser({ ...currentUser, role, isOwner: role === 'owner' });
+      setCurrentUser({ ...currentUser, role, isOwner: isMaster });
     }
   };
 
@@ -1915,8 +2012,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logout = () => {
+    signOutSupabase().catch(() => {});
     // Default to client account on logout
-    const clientAcc = allUsers.find(u => u.role === 'customer') || allUsers[0];
+    const clientAcc = allUsers.find(u => u.role === 'client' || u.role === 'customer') || allUsers[1] || allUsers[0];
     setCurrentUser(clientAcc);
     setActiveTabState('dashboard');
   };
@@ -2084,7 +2182,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         leadEmail: targetLead.email
       });
 
-      confetti({ particleCount: 50, spread: 60 });
       setIsSimulating(false);
     }, (payload?.delaySeconds || 1) * 600);
   };

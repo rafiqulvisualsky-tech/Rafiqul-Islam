@@ -23,15 +23,18 @@ import {
   Copy,
   Check,
   HelpCircle,
+  Database,
   X
 } from 'lucide-react';
 import { VisualSkyLogo } from '../brand/VisualSkyLogo';
+import { signUpWithSupabase, signInWithSupabase, isSupabaseConfigured } from '../../lib/supabase';
+import { UserAccount } from '../../types';
 import confetti from 'canvas-confetti';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialPortal?: 'client' | 'owner';
+  initialPortal?: 'client' | 'agency';
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ 
@@ -44,36 +47,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     allUsers, 
     setAllUsers, 
     currentUser, 
+    setActiveTab,
     addNotification,
     resetUserPasswordByEmail
   } = useApp();
 
-  // Portal selection: 'client' (Customer) vs 'owner' (Master Owner)
-  const [portalType, setPortalType] = useState<'client' | 'owner'>(initialPortal);
+  // Portal selection: 'client' vs 'agency'
+  const [portalType, setPortalType] = useState<'client' | 'agency'>(initialPortal);
   // Mode: 'signin' | 'signup' | 'forgot_password'
   const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'forgot_password'>('signin');
   
-  // Multi-step signup step (1: Account info, 2: Company & Workspace, 3: Goals & Plan)
+  // Multi-step signup step (1: Credentials, 2: Company & Profile, 3: Goals & Plan)
   const [signupStep, setSignupStep] = useState<number>(1);
 
   // Form fields
-  const [name, setName] = useState<string>('Rafiqul Islam');
+  const [name, setName] = useState<string>('Alex Vance');
   const [email, setEmail] = useState<string>(
-    portalType === 'owner' ? 'rafiqulvisualsky@gmail.com' : 'client@growthagency.com'
+    portalType === 'agency' ? 'admin@visualsky.io' : 'client@growthagency.com'
   );
   const [password, setPassword] = useState<string>('VisualSkyPass2026!');
   const [confirmPassword, setConfirmPassword] = useState<string>('VisualSkyPass2026!');
   
   // Step 2 Fields
-  const [company, setCompany] = useState<string>('VisualSky SaaS & Agency');
+  const [company, setCompany] = useState<string>(portalType === 'agency' ? 'VisualSky Agency Platform' : 'Scale Growth Client Account');
   const [website, setWebsite] = useState<string>('https://visualsky.io');
-  const [roleTitle, setRoleTitle] = useState<string>('Founder & CEO');
+  const [roleTitle, setRoleTitle] = useState<string>(portalType === 'agency' ? 'Agency Master Admin' : 'Client Growth Partner');
   const [phone, setPhone] = useState<string>('+1 (415) 890-4211');
 
   // Step 3 Fields
-  const [targetNiche, setTargetNiche] = useState<string>('B2B SaaS & Tech Founders');
-  const [selectedPlan, setSelectedPlan] = useState<'Free' | 'Pro' | 'Agency' | 'Enterprise'>('Pro');
-  const [monthlyVolume, setMonthlyVolume] = useState<string>('5,000 to 25,000 emails/mo');
+  const [targetNiche, setTargetNiche] = useState<string>('B2B SaaS & Enterprise Tech');
+  const [selectedPlan, setSelectedPlan] = useState<'Free' | 'Pro' | 'Agency' | 'Enterprise'>(portalType === 'agency' ? 'Enterprise' : 'Pro');
 
   // Forgot Password Fields
   const [forgotEmail, setForgotEmail] = useState<string>('');
@@ -87,7 +90,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Password visibility toggles
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
-  const [showResetPassword, setShowResetPassword] = useState<boolean>(false);
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -95,94 +97,154 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Check owner count (strictly max 3)
-  const currentOwnersCount = allUsers.filter(u => u.role === 'owner' || u.isOwner).length;
-  const isOwnerLimitReached = currentOwnersCount >= 3;
-
-  // Google 1-Click Fast Sign-In
-  const handleGoogleSignIn = () => {
-    setIsLoading(true);
-    setErrorMessage('');
-    setTimeout(() => {
-      let targetUser = allUsers.find(u => u.email === 'rafiqulvisualsky@gmail.com');
-      if (!targetUser) {
-        targetUser = allUsers[0];
-      }
-      setCurrentUser(targetUser);
-      setIsLoading(false);
-      confetti({ particleCount: 60, spread: 70 });
-      addNotification({
-        title: `Signed in as ${targetUser.name} (${targetUser.role.toUpperCase()})`,
-        message: 'Google Workspace single-sign-on handshake verified.',
-        type: 'system'
-      });
-      onClose();
-    }, 350);
-  };
-
   // Switch Portal
-  const handleSwitchPortal = (type: 'client' | 'owner') => {
+  const handleSwitchPortal = (type: 'client' | 'agency') => {
     setPortalType(type);
     setErrorMessage('');
     setSuccessMessage('');
-    if (type === 'owner') {
-      setEmail('rafiqulvisualsky@gmail.com');
+    if (type === 'agency') {
+      setEmail('admin@visualsky.io');
       setPassword('VisualSkyPass2026!');
-      setName('Rafiqul Islam');
+      setName('Agency Master Admin');
+      setCompany('VisualSky Agency Platform');
+      setRoleTitle('Agency Principal & Master Admin');
       setSelectedPlan('Enterprise');
     } else {
       setEmail('client@growthagency.com');
       setPassword('VisualSkyPass2026!');
-      setName('Sarah Jenkins');
+      setName('Alex Vance');
+      setCompany('Scale Growth Client Account');
+      setRoleTitle('Client Partner');
       setSelectedPlan('Pro');
     }
   };
 
-  // Handle Sign In Submit
-  const handleSignInSubmit = (e: React.FormEvent) => {
+  // Google 1-Click Fast SSO
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    setErrorMessage('');
+    try {
+      const isAgency = portalType === 'agency';
+      const targetUser: UserAccount = {
+        id: `google-user-${Date.now()}`,
+        name: isAgency ? 'Agency Master Admin' : 'Client Partner',
+        email: isAgency ? 'admin@visualsky.io' : 'client@growthagency.com',
+        avatar: isAgency 
+          ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+          : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+        role: portalType,
+        isOwner: isAgency,
+        plan: isAgency ? 'Enterprise' : 'Pro',
+        quotaUsed: 0,
+        quotaLimit: isAgency ? 50000 : 5000,
+        aiCredits: isAgency ? 10000 : 2500,
+        company: isAgency ? 'VisualSky Agency Platform' : 'Scale Growth Client Account',
+        title: isAgency ? 'Agency Principal' : 'Client Partner'
+      };
+
+      setCurrentUser(targetUser);
+      setAllUsers(prev => {
+        const filtered = prev.filter(u => u.email !== targetUser.email);
+        return [targetUser, ...filtered];
+      });
+
+      // Automatic Redirection
+      if (portalType === 'client') {
+        setActiveTab('dashboard'); // Client Dashboard
+      } else {
+        setActiveTab('owner'); // Agency Master Dashboard
+      }
+
+      setIsLoading(false);
+      confetti({ particleCount: 60, spread: 70 });
+      addNotification({
+        title: `Signed in as ${targetUser.name} (${portalType.toUpperCase()})`,
+        message: portalType === 'agency' 
+          ? 'Redirected to Agency Master Dashboard.'
+          : 'Redirected to Client Dashboard.',
+        type: 'system'
+      });
+      onClose();
+    } catch (err: any) {
+      setIsLoading(false);
+      setErrorMessage(err?.message || 'Google sign-in failed');
+    }
+  };
+
+  // Handle Sign In Submit (Supabase Auth + Role-Based Redirection)
+  const handleSignInSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
     setIsLoading(true);
 
-    setTimeout(() => {
+    try {
+      // Authenticate with Supabase
+      const result = await signInWithSupabase(email, password, portalType);
+
+      if (!result.success && result.error) {
+        // If Supabase returned an error, display it clearly
+        setErrorMessage(result.error);
+        setIsLoading(false);
+        return;
+      }
+
+      const assignedRole: 'client' | 'agency' = result.role || portalType;
+      const isAgency = assignedRole === 'agency';
+
+      // Check if user already exists in local list or build from Supabase user data
       const matched = allUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
-      if (matched) {
-        setCurrentUser(matched);
+      const authenticatedUser: UserAccount = matched 
+        ? { ...matched, role: assignedRole, isOwner: isAgency }
+        : {
+            id: result.user?.id || `usr-${Date.now()}`,
+            name: result.user?.user_metadata?.name || name || (isAgency ? 'Agency Master Admin' : 'Client User'),
+            email: email,
+            avatar: isAgency
+              ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+              : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+            role: assignedRole,
+            isOwner: isAgency,
+            plan: (result.user?.user_metadata?.plan || (isAgency ? 'Enterprise' : 'Pro')) as any,
+            quotaUsed: 0,
+            quotaLimit: isAgency ? 50000 : 5000,
+            aiCredits: isAgency ? 10000 : 2500,
+            company: result.user?.user_metadata?.company || company,
+            title: result.user?.user_metadata?.title || roleTitle,
+            phone: result.user?.user_metadata?.phone || phone,
+            supabaseId: result.user?.id
+          };
+
+      setCurrentUser(authenticatedUser);
+      setAllUsers(prev => {
+        const filtered = prev.filter(u => u.email.toLowerCase() !== email.toLowerCase());
+        return [authenticatedUser, ...filtered];
+      });
+
+      // Automatic Redirection as requested
+      if (assignedRole === 'client') {
+        setActiveTab('dashboard'); // Client Dashboard
       } else {
-        // Fallback create user
-        const fallbackUser = {
-          id: `usr-${Date.now()}`,
-          name: name || (portalType === 'owner' ? 'Master Owner' : 'Client Customer'),
-          email: email,
-          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-          role: portalType === 'owner' ? ('owner' as const) : ('rep' as const),
-          isOwner: portalType === 'owner',
-          plan: (portalType === 'owner' ? 'Enterprise' : 'Pro') as any,
-          quotaUsed: 0,
-          quotaLimit: portalType === 'owner' ? 100000 : 5000,
-          aiCredits: portalType === 'owner' ? 2000 : 250,
-          company: company,
-          title: roleTitle,
-          phone: phone
-        };
-        setCurrentUser(fallbackUser);
+        setActiveTab('owner'); // Agency Master Dashboard
       }
 
       setIsLoading(false);
       confetti({ particleCount: 50, spread: 60 });
       addNotification({
-        title: `Welcome back, ${name}! 👋`,
-        message: portalType === 'owner' 
-          ? 'Master Owner privileges active with full administrative controls.'
-          : 'Customer portal active with cold outreach tools.',
+        title: `Welcome back, ${authenticatedUser.name}! 👋`,
+        message: assignedRole === 'agency'
+          ? 'Agency Master Portal active. Full admin controls unlocked.'
+          : 'Client Workspace active. Ready for high-converting outreach.',
         type: 'system'
       });
       onClose();
-    }, 350);
+    } catch (err: any) {
+      setIsLoading(false);
+      setErrorMessage(err?.message || 'Authentication failed. Please check your credentials.');
+    }
   };
 
-  // Multi-step signup step advancement
-  const handleNextSignupStep = (e: React.FormEvent) => {
+  // Multi-step signup step advancement (Supabase Registration + Role Assignment)
+  const handleNextSignupStep = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
@@ -203,10 +265,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setErrorMessage('Passwords do not match!');
         return;
       }
-      if (portalType === 'owner' && isOwnerLimitReached) {
-        setErrorMessage('Owner registration limit reached! Maximum 3 Owner accounts allowed.');
-        return;
-      }
       setSignupStep(2);
       return;
     }
@@ -221,40 +279,76 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
 
     if (signupStep === 3) {
-      // Complete Registration
+      // Complete Registration with Supabase
       setIsLoading(true);
-      setTimeout(() => {
+      
+      try {
+        const roleToAssign: 'client' | 'agency' = portalType;
+        
+        // Call Supabase SignUp saving role in user_metadata
+        const result = await signUpWithSupabase(email, password, {
+          name,
+          role: roleToAssign, // 'client' or 'agency' saved directly in Supabase metadata
+          company,
+          website,
+          phone,
+          plan: selectedPlan,
+          title: roleTitle,
+          targetNiche
+        });
+
+        if (!result.success && result.error) {
+          setErrorMessage(result.error);
+          setIsLoading(false);
+          return;
+        }
+
+        const isAgency = roleToAssign === 'agency';
         const planQuotas = { Free: 500, Pro: 5000, Agency: 25000, Enterprise: 100000 };
-        const newCreatedUser = {
-          id: `usr-${Date.now()}`,
+        const newCreatedUser: UserAccount = {
+          id: result.user?.id || `usr-${Date.now()}`,
           name: name,
           email: email,
-          avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-          role: portalType === 'owner' ? ('owner' as const) : ('rep' as const),
-          isOwner: portalType === 'owner',
+          avatar: isAgency
+            ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+            : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+          role: roleToAssign,
+          isOwner: isAgency,
           plan: selectedPlan,
           quotaUsed: 0,
-          quotaLimit: planQuotas[selectedPlan] || 5000,
-          aiCredits: portalType === 'owner' ? 2000 : 350,
+          quotaLimit: planQuotas[selectedPlan] || (isAgency ? 50000 : 5000),
+          aiCredits: isAgency ? 10000 : 2500,
           company: company,
           title: roleTitle,
           phone: phone,
           joinedAt: new Date().toISOString().split('T')[0],
-          password: password
+          supabaseId: result.user?.id
         };
 
         setAllUsers(prev => [newCreatedUser, ...prev]);
         setCurrentUser(newCreatedUser);
-        setIsLoading(false);
 
+        // Automatic Redirection as requested
+        if (roleToAssign === 'client') {
+          setActiveTab('dashboard'); // Client Dashboard
+        } else {
+          setActiveTab('owner'); // Agency Master Dashboard
+        }
+
+        setIsLoading(false);
         confetti({ particleCount: 80, spread: 90 });
         addNotification({
-          title: `Account Created Successfully! 🎉`,
-          message: `Welcome to Visual Sky, ${name}! Your ${selectedPlan} workspace is ready.`,
+          title: `Account Registered Successfully! 🎉`,
+          message: isAgency
+            ? `Welcome to Visual Sky Agency Master! Role: agency, Workspace: ${company}.`
+            : `Welcome to Visual Sky Client Portal! Role: client, Workspace: ${company}.`,
           type: 'system'
         });
         onClose();
-      }, 400);
+      } catch (err: any) {
+        setIsLoading(false);
+        setErrorMessage(err?.message || 'Registration failed. Please try again.');
+      }
     }
   };
 
@@ -320,9 +414,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div>
                 <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
                   <span>{authMode === 'signin' ? 'Workspace Sign In' : authMode === 'signup' ? 'Create Account' : 'Account Recovery'}</span>
+                  {isSupabaseConfigured && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                      <Database className="w-2.5 h-2.5" />
+                      Supabase Live
+                    </span>
+                  )}
                 </h2>
                 <p className="text-xs text-slate-400">
-                  {authMode === 'signup' && `Step ${signupStep} of 3: Personalized Workspace Setup`}
+                  {authMode === 'signup' && `Step ${signupStep} of 3: ${portalType === 'client' ? 'Client Workspace Setup' : 'Agency Master Setup'}`}
+                  {authMode === 'signin' && `Sign in to access your ${portalType === 'client' ? 'Client Dashboard' : 'Agency Master Dashboard'}`}
                   {authMode === 'forgot_password' && 'Password Reset & Verification'}
                 </p>
               </div>
@@ -336,7 +437,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </button>
           </div>
 
-          {/* Portal Selector Pills (Client vs Owner) */}
+          {/* Portal Selector Pills (Client vs Agency) */}
           {authMode !== 'forgot_password' && (
             <div className="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-800/80">
               <button
@@ -349,20 +450,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 }`}
               >
                 <User className="w-3.5 h-3.5" />
-                <span>Client & Customer Portal</span>
+                <span>Client Portal (role: client)</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => handleSwitchPortal('owner')}
+                onClick={() => handleSwitchPortal('agency')}
                 className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition cursor-pointer ${
-                  portalType === 'owner'
+                  portalType === 'agency'
                     ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-md shadow-amber-500/20'
                     : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
                 }`}
               >
                 <Crown className="w-3.5 h-3.5" />
-                <span>Master Owner Portal {isOwnerLimitReached ? '(Max 3)' : ''}</span>
+                <span>Agency Master (role: agency)</span>
               </button>
             </div>
           )}
@@ -404,19 +505,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
                   <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
                 </svg>
-                <span>Continue with Google Workspace</span>
+                <span>Continue as {portalType === 'agency' ? 'Agency Master' : 'Client'}</span>
               </button>
 
               <div className="flex items-center gap-3">
                 <div className="h-px bg-slate-800 flex-1" />
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">or sign in with email</span>
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  or sign in with Supabase
+                </span>
                 <div className="h-px bg-slate-800 flex-1" />
               </div>
 
               <form onSubmit={handleSignInSubmit} className="space-y-3.5">
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-300">
-                    Email Address
+                    Work Email Address
                   </label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
@@ -425,7 +528,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="name@company.com"
+                      placeholder={portalType === 'agency' ? 'admin@visualsky.io' : 'client@growthagency.com'}
                       className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none transition"
                     />
                   </div>
@@ -474,14 +577,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   disabled={isLoading}
                   className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-extrabold text-xs tracking-wide shadow-lg shadow-cyan-500/20 disabled:opacity-50 transition cursor-pointer flex items-center justify-center gap-2 mt-2"
                 >
-                  {isLoading ? 'Authenticating...' : 'Sign In to Workspace'}
+                  {isLoading ? 'Signing In with Supabase...' : `Sign In to ${portalType === 'client' ? 'Client' : 'Agency Master'} Dashboard`}
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </form>
 
               {/* Bottom Switch to Sign Up */}
               <div className="pt-3 border-t border-slate-800 text-center text-xs text-slate-400">
-                Don&apos;t have an account yet?{' '}
+                Don&apos;t have a {portalType === 'client' ? 'Client' : 'Agency'} account yet?{' '}
                 <button
                   type="button"
                   onClick={() => {
@@ -491,7 +594,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   }}
                   className="text-cyan-400 hover:underline font-bold cursor-pointer"
                 >
-                  Create your account &rarr;
+                  Register as {portalType === 'client' ? 'Client' : 'Agency'} &rarr;
                 </button>
               </div>
             </div>
@@ -505,9 +608,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {/* Step Tracker */}
               <div className="flex items-center justify-between pb-3 border-b border-slate-800">
                 {[
-                  { step: 1, label: 'Credentials' },
-                  { step: 2, label: 'Workspace' },
-                  { step: 3, label: 'Plan & Quota' },
+                  { step: 1, label: 'Account' },
+                  { step: 2, label: 'Organization' },
+                  { step: 3, label: 'Role & Plan' },
                 ].map((s) => (
                   <div key={s.step} className="flex items-center gap-2">
                     <div className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center transition ${
@@ -528,6 +631,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 ))}
               </div>
 
+              {/* Role Indicator Banner */}
+              <div className={`p-3 rounded-2xl border text-xs flex items-center justify-between ${
+                portalType === 'agency'
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                  : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+              }`}>
+                <div className="flex items-center gap-2">
+                  {portalType === 'agency' ? <Crown className="w-4 h-4" /> : <User className="w-4 h-4" />}
+                  <span>
+                    Registering with assigned Supabase role: <strong>{portalType}</strong>
+                  </span>
+                </div>
+                <span className="text-[10px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded bg-slate-900/80 border border-slate-700">
+                  {portalType === 'agency' ? 'Agency Master' : 'Client User'}
+                </span>
+              </div>
+
               <form onSubmit={handleNextSignupStep} className="space-y-3.5">
                 
                 {/* STEP 1: Account Credentials */}
@@ -544,7 +664,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           required
                           value={name}
                           onChange={(e) => setName(e.target.value)}
-                          placeholder="e.g. Rafiqul Islam"
+                          placeholder={portalType === 'agency' ? 'e.g. Agency Master Admin' : 'e.g. Alex Vance'}
                           className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none transition"
                         />
                       </div>
@@ -561,7 +681,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           required
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
-                          placeholder="name@company.com"
+                          placeholder={portalType === 'agency' ? 'admin@youragency.com' : 'user@clientcompany.com'}
                           className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none transition"
                         />
                       </div>
@@ -608,12 +728,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </div>
                 )}
 
-                {/* STEP 2: Company & Workspace */}
+                {/* STEP 2: Company & Profile */}
                 {signupStep === 2 && (
                   <div className="space-y-3 animate-in fade-in">
                     <div className="space-y-1.5">
                       <label className="block text-xs font-bold text-slate-300">
-                        Company or Agency Name <span className="text-cyan-400">*</span>
+                        {portalType === 'agency' ? 'Agency Platform Name' : 'Company or Business Name'} <span className="text-cyan-400">*</span>
                       </label>
                       <div className="relative">
                         <Building className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
@@ -622,7 +742,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           required
                           value={company}
                           onChange={(e) => setCompany(e.target.value)}
-                          placeholder="e.g. VisualSky SaaS & Media"
+                          placeholder={portalType === 'agency' ? 'e.g. VisualSky Outreach Agency' : 'e.g. Scale Growth Client Account'}
                           className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none transition"
                         />
                       </div>
@@ -630,7 +750,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                     <div className="space-y-1.5">
                       <label className="block text-xs font-bold text-slate-300">
-                        Company Website URL
+                        Website URL
                       </label>
                       <div className="relative">
                         <Globe className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
@@ -647,7 +767,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <label className="block text-xs font-bold text-slate-300">
-                          Your Job Title / Role
+                          Your Job Title / Position
                         </label>
                         <div className="relative">
                           <Briefcase className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
@@ -655,7 +775,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             type="text"
                             value={roleTitle}
                             onChange={(e) => setRoleTitle(e.target.value)}
-                            placeholder="e.g. Founder, CEO, Growth Head"
+                            placeholder={portalType === 'agency' ? 'Agency Principal & Founder' : 'Growth Partner / Account Lead'}
                             className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none transition"
                           />
                         </div>
@@ -691,7 +811,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         type="text"
                         value={targetNiche}
                         onChange={(e) => setTargetNiche(e.target.value)}
-                        placeholder="e.g. B2B SaaS, E-Commerce Brands, Local Agencies"
+                        placeholder="e.g. B2B SaaS, E-Commerce, Local Services"
                         className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl px-3.5 py-2 text-xs text-slate-200 focus:outline-none transition"
                       />
                     </div>
@@ -702,10 +822,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       </label>
                       <div className="grid grid-cols-2 gap-2.5">
                         {[
-                          { plan: 'Free', limit: '500 leads/mo', price: '$0 / forever' },
-                          { plan: 'Pro', limit: '5,000 leads/mo', price: '$49 / mo', popular: true },
+                          { plan: 'Free', limit: '500 leads/mo', price: '$0 / mo' },
+                          { plan: 'Pro', limit: '5,000 leads/mo', price: '$49 / mo', popular: portalType === 'client' },
                           { plan: 'Agency', limit: '25,000 leads/mo', price: '$149 / mo' },
-                          { plan: 'Enterprise', limit: '100,000 leads/mo', price: '$399 / mo' },
+                          { plan: 'Enterprise', limit: '100,000 leads/mo', price: '$399 / mo', popular: portalType === 'agency' },
                         ].map((p) => (
                           <div
                             key={p.plan}
@@ -758,9 +878,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-extrabold text-xs tracking-wide shadow-lg shadow-cyan-500/20 disabled:opacity-50 transition cursor-pointer"
                   >
                     {isLoading
-                      ? 'Creating Workspace...'
+                      ? 'Registering with Supabase...'
                       : signupStep === 3
-                      ? 'Complete & Launch Workspace 🚀'
+                      ? `Complete & Launch ${portalType === 'client' ? 'Client' : 'Agency'} Dashboard 🚀`
                       : 'Next Step'}
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
@@ -799,7 +919,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         required
                         value={forgotEmail}
                         onChange={(e) => setForgotEmail(e.target.value)}
-                        placeholder="rafiqulvisualsky@gmail.com"
+                        placeholder="client@growthagency.com"
                         className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none transition"
                       />
                     </div>
@@ -849,56 +969,44 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         <span>{otpCopied ? 'Auto-Filled!' : 'Copy Code'}</span>
                       </button>
                     </div>
-                    <div className="text-xs text-slate-300">
-                      Code for <span className="font-bold text-white">{forgotEmail}</span>:{' '}
-                      <span className="font-mono font-bold text-amber-400 text-sm tracking-widest bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
-                        {generatedOTP}
-                      </span>
-                    </div>
+                    <p className="text-[11px] text-slate-300">
+                      Security code has been generated: <span className="font-mono text-cyan-300 font-bold bg-slate-900 px-2 py-0.5 rounded border border-cyan-500/40">{generatedOTP}</span>
+                    </p>
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="block text-xs font-bold text-slate-300">
-                      Enter 6-Digit Verification Code
+                      Enter 6-Digit Verification Code <span className="text-cyan-400">*</span>
                     </label>
                     <input
                       type="text"
-                      maxLength={6}
                       required
+                      maxLength={6}
                       value={enteredOTP}
                       onChange={(e) => setEnteredOTP(e.target.value)}
                       placeholder="e.g. 849201"
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl px-3.5 py-2.5 text-center font-mono text-base tracking-widest text-cyan-300 focus:outline-none transition"
+                      className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl px-3 py-2 text-center text-sm font-mono tracking-widest text-cyan-300 focus:outline-none transition"
                     />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <label className="block text-xs font-bold text-slate-300">
-                        New Password (Min 6 chars)
+                        New Password <span className="text-cyan-400">*</span>
                       </label>
-                      <div className="relative">
-                        <input
-                          type={showResetPassword ? 'text' : 'password'}
-                          required
-                          value={newResetPassword}
-                          onChange={(e) => setNewResetPassword(e.target.value)}
-                          placeholder="New password"
-                          className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl pl-3 pr-9 py-2 text-xs text-slate-200 focus:outline-none transition"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowResetPassword(!showResetPassword)}
-                          className="absolute right-2.5 top-2.5 text-slate-500 hover:text-slate-300"
-                        >
-                          {showResetPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
+                      <input
+                        type="password"
+                        required
+                        value={newResetPassword}
+                        onChange={(e) => setNewResetPassword(e.target.value)}
+                        placeholder="Min 6 chars"
+                        className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none transition"
+                      />
                     </div>
 
                     <div className="space-y-1.5">
                       <label className="block text-xs font-bold text-slate-300">
-                        Confirm New Password
+                        Confirm New Password <span className="text-cyan-400">*</span>
                       </label>
                       <input
                         type="password"
@@ -911,22 +1019,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+                  <div className="flex items-center justify-between pt-2">
                     <button
                       type="button"
                       onClick={() => setForgotPhase('request')}
                       className="text-xs text-slate-400 hover:text-slate-200 cursor-pointer"
                     >
-                      &larr; Resend Code
+                      &larr; Re-send Code
                     </button>
 
                     <button
                       type="submit"
                       disabled={isLoading}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold text-xs shadow-lg shadow-emerald-500/20 disabled:opacity-50 transition cursor-pointer"
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-extrabold text-xs shadow-lg shadow-cyan-500/20 disabled:opacity-50 transition cursor-pointer"
                     >
-                      {isLoading ? 'Resetting...' : 'Reset & Save Password'}
-                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      {isLoading ? 'Updating Password...' : 'Save & Reset Password'}
+                      <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </form>

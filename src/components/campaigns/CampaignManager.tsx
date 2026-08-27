@@ -603,7 +603,6 @@ export const CampaignManager: React.FC = () => {
         message: `Automated sequence enrolled for ${followUpSelectedLeadIds.length} recipients.`,
         type: 'campaign'
       });
-      confetti({ particleCount: 50, spread: 70 });
     }
   };
 
@@ -762,7 +761,6 @@ export const CampaignManager: React.FC = () => {
       message: `Subject and body applied into Sequence Step ${targetStepIndex + 1}.`,
       type: 'campaign'
     });
-    confetti({ particleCount: 35, spread: 45 });
   };
 
   // Save new template from inside wizard with tags
@@ -966,7 +964,6 @@ export const CampaignManager: React.FC = () => {
     }
 
     setIsDispatching(false);
-    confetti({ particleCount: 70, spread: 80 });
   };
 
   const handleStopDispatch = () => {
@@ -1007,7 +1004,6 @@ export const CampaignManager: React.FC = () => {
         message: 'Campaign sequences, schedule, and lead configurations updated.',
         type: 'campaign'
       });
-      confetti({ particleCount: 50, spread: 60 });
       return;
     }
 
@@ -1038,7 +1034,6 @@ export const CampaignManager: React.FC = () => {
         message: `Campaign "${campaignTitle}" scheduled to run during ${scheduleStartTime} - ${scheduleEndTime} (${scheduleTimezone}).`,
         type: 'campaign'
       });
-      confetti({ particleCount: 50, spread: 60 });
     }
   };
 

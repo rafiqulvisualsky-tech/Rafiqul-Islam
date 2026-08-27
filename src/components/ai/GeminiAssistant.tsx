@@ -53,18 +53,27 @@ interface ChatSession {
 }
 
 export const GeminiAssistant: React.FC = () => {
-  const { currentUser, leads, emailTemplates, campaigns, addEmailTemplate, addNotification } = useApp();
+  const { currentUser, leads, emailTemplates, campaigns, addEmailTemplate, addNotification, playNotificationSound } = useApp();
 
-  const [sessions, setSessions] = useState<ChatSession[]>([
-    {
-      id: 'session-default',
-      title: 'High-Converting Cold Outreach',
-      createdAt: 'Today',
-      messages: [
-        {
-          id: 'msg-init',
-          role: 'assistant',
-          content: `Hello ${currentUser.name}! I am your **Visual Sky AI Outreach Copilot** (powered by Gemini 3.7 & ChatGPT Intelligence).
+  const [sessions, setSessions] = useState<ChatSession[]>(() => {
+    try {
+      const saved = localStorage.getItem('visualsky_ai_chat_sessions');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+
+    return [
+      {
+        id: 'session-default',
+        title: 'High-Converting Cold Outreach',
+        createdAt: 'Today',
+        messages: [
+          {
+            id: 'msg-init',
+            role: 'assistant',
+            content: `Hello ${currentUser.name || 'Friend'}! I am your **Visual Sky AI Outreach Copilot** (powered by Gemini 3.7 & ChatGPT Intelligence).
 
 ### What I can engineer for you today:
 1. 🎯 **Hyper-Personalized Icebreakers**: Generate tailor-made 1-to-1 hooks using your leads' company and niche data.
@@ -74,18 +83,34 @@ export const GeminiAssistant: React.FC = () => {
 5. 📊 **A/B Subject Line Testing**: Predict open rates and pick executive-level hooks.
 
 You can also **attach CRM Leads**, **select AI Models**, or **voice dictate** prompts below!`,
-          timestamp: 'Just now',
-          modelUsed: 'Gemini 3.7 Flash'
-        }
-      ]
-    }
-  ]);
+            timestamp: 'Just now',
+            modelUsed: 'Gemini 3.7 Flash'
+          }
+        ]
+      }
+    ];
+  });
 
-  const [activeSessionId, setActiveSessionId] = useState<string>('session-default');
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => {
+    try {
+      const savedId = localStorage.getItem('visualsky_ai_active_session_id');
+      if (savedId) return savedId;
+    } catch {}
+    return 'session-default';
+  });
+
   const [inputPrompt, setInputPrompt] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [savedTemplateMsgId, setSavedTemplateMsgId] = useState<string | null>(null);
+
+  // Sync sessions to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('visualsky_ai_chat_sessions', JSON.stringify(sessions));
+      localStorage.setItem('visualsky_ai_active_session_id', activeSessionId);
+    } catch {}
+  }, [sessions, activeSessionId]);
 
   // Selected AI Model
   const [selectedModel, setSelectedModel] = useState<string>('gemini-3.7-flash');
@@ -299,6 +324,13 @@ Format with clean Markdown, clear sections, bullet points, and ready-to-use emai
         }
         return s;
       }));
+
+      addNotification({
+        title: 'AI Copilot Strategy Ready 🤖',
+        message: `Generated outbound copy using ${selectedModel}.`,
+        type: 'system',
+        linkTab: 'ai_copilot'
+      });
     } catch {
       const fallbackMsg: ChatMessage = {
         id: `ai-err-${Date.now()}`,
@@ -350,7 +382,6 @@ Format with clean Markdown, clear sections, bullet points, and ready-to-use emai
     });
 
     setSavedTemplateMsgId(msgId);
-    confetti({ particleCount: 35, spread: 60 });
     setTimeout(() => setSavedTemplateMsgId(null), 3000);
   };
 

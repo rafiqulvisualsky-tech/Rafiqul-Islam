@@ -32,8 +32,10 @@ export const Sidebar: React.FC = () => {
   const runningCampaignsCount = campaigns.filter(c => c.status === 'running').length;
   const activeSmtpCount = smtpAccounts.filter(s => !s.isTrash && s.isConnected).length;
 
+  const isAgency = currentUser.role === 'agency' || currentUser.role === 'owner' || Boolean(currentUser.isOwner);
+
   const isServiceDisabled = (tabId: string) => {
-    if (currentUser.role !== 'customer') return false;
+    if (isAgency) return false;
     if (currentUser.permissions?.accountStatus === 'suspended') return true;
     if (tabId === 'generator' && currentUser.permissions?.leadMinerEnabled === false) return true;
     if (tabId === 'inbox' && currentUser.permissions?.smartInboxEnabled === false) return true;
@@ -116,11 +118,11 @@ export const Sidebar: React.FC = () => {
       tag: isServiceDisabled('ai_copilot') ? '🔒 Disabled' : 'Chat',
       tagColor: isServiceDisabled('ai_copilot') ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
     },
-    ...(currentUser.role === 'owner' ? [{
+    ...(isAgency ? [{
       id: 'owner',
-      label: 'Owner Control Panel',
+      label: 'Agency Master Dashboard',
       icon: ShieldCheck,
-      tag: '👑 Admin',
+      tag: '👑 Agency',
       tagColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
     }] : []),
     {

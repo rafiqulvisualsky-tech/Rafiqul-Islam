@@ -326,7 +326,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-cyan-400" />
                   <span className="font-bold text-cyan-300 capitalize">
-                    {currentUser.role === 'owner' ? 'Master Owner Account' : `${currentUser.role} Workspace`}
+                    {currentUser.role === 'agency' || currentUser.role === 'owner' || currentUser.isOwner 
+                      ? 'Agency Master Account (role: agency)' 
+                      : 'Client Customer Account (role: client)'}
                   </span>
                 </div>
                 <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-cyan-500 text-black shadow-xs">

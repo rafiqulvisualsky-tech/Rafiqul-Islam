@@ -204,7 +204,7 @@ export interface UserAccount {
   name: string;
   email: string;
   avatar: string;
-  role: 'owner' | 'manager' | 'rep' | 'customer';
+  role: 'client' | 'agency' | 'owner' | 'manager' | 'rep' | 'customer';
   isOwner?: boolean;
   plan: 'Free' | 'Pro' | 'Agency' | 'Enterprise';
   quotaUsed: number;
@@ -216,6 +216,7 @@ export interface UserAccount {
   permissions?: CustomerPermissions;
   joinedAt?: string;
   password?: string;
+  supabaseId?: string;
 }
 
 export interface TemplateCategory {

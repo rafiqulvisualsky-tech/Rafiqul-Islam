@@ -97,6 +97,17 @@ export const SmartInbox: React.FC = () => {
   const [composeSmtpId, setComposeSmtpId] = useState<string>(smtpAccounts[0]?.id || '');
   const [isGeneratingComposeAi, setIsGeneratingComposeAi] = useState<boolean>(false);
 
+  // Active usable email templates (including all custom-created templates)
+  const activeEmailTemplates = useMemo(() => {
+    return (emailTemplates || [])
+      .filter(t => !t.isTrash)
+      .sort((a, b) => {
+        if (a.isCustom && !b.isCustom) return -1;
+        if (!a.isCustom && b.isCustom) return 1;
+        return 0;
+      });
+  }, [emailTemplates]);
+
   // Label presets
   const labelPresets = [
     { name: 'Hot Lead', color: 'bg-rose-500/20 text-rose-300 border-rose-500/30' },
@@ -197,7 +208,6 @@ export const SmartInbox: React.FC = () => {
     sendReply(currentThread.id, replyText.trim());
     setReplyText('');
     setCustomReplyPrompt('');
-    confetti({ particleCount: 30, spread: 50 });
   };
 
   // AI Reply Draft Generator
@@ -235,7 +245,6 @@ export const SmartInbox: React.FC = () => {
       const data = await response.json();
       if (data.reply) {
         setReplyText(cleanBodyText(data.reply));
-        confetti({ particleCount: 35, spread: 55 });
       }
     } catch {
       setReplyText(`Hi ${currentThread.leadName},\n\nThank you for following up! I'd love to share a quick 2-minute video preview of our platform.\n\nWould next Thursday at 2 PM work for a brief 10-min chat?\n\nBest regards,\n${currentUser.name}`);
@@ -262,7 +271,6 @@ export const SmartInbox: React.FC = () => {
       const data = await response.json();
       if (data.success && data.optimizedBody) {
         setReplyText(data.optimizedBody);
-        confetti({ particleCount: 25, spread: 45 });
       }
     } catch {} finally {
       setIsGeneratingAiReply(false);
@@ -287,10 +295,39 @@ export const SmartInbox: React.FC = () => {
       if (data.success && data.subject && data.body) {
         setComposeSubject(data.subject);
         setComposeBody(data.body);
-        confetti({ particleCount: 30, spread: 50 });
       }
     } catch {} finally {
       setIsGeneratingComposeAi(false);
+    }
+  };
+
+  // Instant Template Inserter with intelligent placeholder replacement
+  const handleInsertTemplate = (templateId: string, isCompose: boolean = false) => {
+    const tmpl = emailTemplates.find(item => item.id === templateId);
+    if (!tmpl) return;
+
+    const leadName = isCompose ? (composeName || 'there') : (currentThread?.leadName || 'there');
+    const leadCompany = isCompose ? '' : (currentThread?.leadCompany || 'your team');
+    const leadEmail = isCompose ? composeTo : (currentThread?.leadEmail || '');
+
+    const replacePlaceholders = (text: string) => {
+      return text
+        .replace(/\{\{name\}\}/gi, leadName)
+        .replace(/\{\{first_name\}\}/gi, leadName.split(' ')[0] || leadName)
+        .replace(/\{\{company\}\}/gi, leadCompany || 'your company')
+        .replace(/\{\{email\}\}/gi, leadEmail)
+        .replace(/\{\{website\}\}/gi, 'your website')
+        .replace(/\{\{sender_name\}\}/gi, currentUser.name);
+    };
+
+    const processedBody = replacePlaceholders(tmpl.body);
+    const processedSubject = replacePlaceholders(tmpl.subject);
+
+    if (isCompose) {
+      setComposeSubject(processedSubject);
+      setComposeBody(processedBody);
+    } else {
+      setReplyText(processedBody);
     }
   };
 
@@ -715,22 +752,29 @@ export const SmartInbox: React.FC = () => {
                     className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-3 text-xs md:text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 shadow-inner"
                   />
 
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5">
-                      {/* Saved Templates Loader */}
-                      <select
-                        onChange={(e) => {
-                          const t = emailTemplates.find(item => item.id === e.target.value);
-                          if (t) setReplyText(t.body);
-                        }}
-                        defaultValue=""
-                        className="bg-slate-900 text-slate-300 text-[11px] font-bold border border-slate-800 rounded-xl px-2.5 py-1.5 cursor-pointer focus:outline-none"
-                      >
-                        <option value="" disabled>⚡ Insert Template...</option>
-                        {emailTemplates.map(t => (
-                          <option key={t.id} value={t.id}>{t.title}</option>
-                        ))}
-                      </select>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      {/* Saved & Custom Templates Instant Inserter */}
+                      <div className="flex items-center gap-1.5 bg-slate-950/80 border border-slate-800 rounded-xl px-2.5 py-1">
+                        <FileText className="w-3.5 h-3.5 text-cyan-400" />
+                        <select
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handleInsertTemplate(e.target.value, false);
+                              e.target.value = "";
+                            }
+                          }}
+                          defaultValue=""
+                          className="bg-transparent text-slate-200 text-[11px] font-bold cursor-pointer focus:outline-none max-w-[220px] truncate"
+                        >
+                          <option value="" disabled className="bg-slate-900 text-slate-400">⚡ Instant Template ({activeEmailTemplates.length} available)...</option>
+                          {activeEmailTemplates.map(t => (
+                            <option key={t.id} value={t.id} className="bg-slate-900 text-slate-100">
+                              {t.isCustom ? '⭐ ' : '📋 '} {t.title} {t.isCustom ? '(Custom)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
 
                     <button
@@ -784,12 +828,37 @@ export const SmartInbox: React.FC = () => {
               </button>
             </div>
 
-            {/* AI Generator In Compose Modal */}
-            <div className="p-3 bg-gradient-to-br from-indigo-950/40 via-slate-900/90 to-cyan-950/40 rounded-2xl border border-indigo-500/30 space-y-2">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-cyan-300">
-                <Sparkles className="w-3.5 h-3.5 animate-pulse" />
-                <span>Gemini AI Quick Email Generator:</span>
+            {/* AI Generator & Saved Template Bar In Compose Modal */}
+            <div className="p-3 bg-gradient-to-br from-indigo-950/40 via-slate-900/90 to-cyan-950/40 rounded-2xl border border-indigo-500/30 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-cyan-300">
+                  <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+                  <span>AI & Template Outbound Presets:</span>
+                </div>
+
+                {/* Instant Template Inserter Dropdown */}
+                <div className="flex items-center gap-1.5 bg-slate-900/90 border border-slate-700 px-2 py-1 rounded-xl">
+                  <FileText className="w-3.5 h-3.5 text-cyan-400" />
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleInsertTemplate(e.target.value, true);
+                        e.target.value = '';
+                      }
+                    }}
+                    defaultValue=""
+                    className="bg-transparent text-slate-200 text-[11px] font-bold cursor-pointer focus:outline-none max-w-[190px] truncate"
+                  >
+                    <option value="" disabled className="bg-slate-900 text-slate-400">⚡ Use Saved Template ({emailTemplates.length})...</option>
+                    {emailTemplates.map(t => (
+                      <option key={t.id} value={t.id} className="bg-slate-900 text-slate-100">
+                        {t.title} {t.isCustom ? '(Custom)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
+
               <div className="flex flex-wrap gap-1.5">
                 {[
                   { label: '🚀 SaaS Pitch (99.8% Placement)', type: 'pitch' as const, prompt: 'Pitch cold outreach software highlighting 99.8% inbox placement and instant lead generation.' },
@@ -850,7 +919,29 @@ export const SmartInbox: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-[11px] font-bold text-slate-400">Subject Line *</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-bold text-slate-400">Subject Line *</label>
+                  <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg px-2 py-0.5">
+                    <FileText className="w-3 h-3 text-cyan-400" />
+                    <select
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          handleInsertTemplate(e.target.value, true);
+                          e.target.value = "";
+                        }
+                      }}
+                      defaultValue=""
+                      className="bg-transparent text-cyan-300 text-[10px] font-bold cursor-pointer focus:outline-none max-w-[190px] truncate"
+                    >
+                      <option value="" disabled className="bg-slate-900 text-slate-400">⚡ Insert Saved Template...</option>
+                      {activeEmailTemplates.map(t => (
+                        <option key={t.id} value={t.id} className="bg-slate-900 text-slate-100">
+                          {t.isCustom ? '⭐ ' : '📋 '} {t.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
                 <input
                   type="text"
                   required
