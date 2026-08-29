@@ -172,6 +172,9 @@ interface AppContextType {
   unreadNotificationCount: number;
 
   // User Accounts & Portal Roles
+  isAuthenticated: boolean;
+  setIsAuthenticated: (auth: boolean) => void;
+  loginUser: (user: UserAccount) => void;
   currentUser: UserAccount;
   setCurrentUser: (user: UserAccount) => void;
   allUsers: UserAccount[];
@@ -321,6 +324,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  const [isAuthenticated, setIsAuthenticatedState] = useState<boolean>(() => {
+    try {
+      const authStored = localStorage.getItem('visualsky_authenticated');
+      return authStored === 'true';
+    } catch {
+      return false;
+    }
+  });
+
   const [currentUser, setCurrentUserState] = useState<UserAccount>(() => {
     try {
       const saved = localStorage.getItem('visualsky_current_user');
@@ -333,6 +345,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Client vs Agency / Owner route guard
   const isAgencyUser = (user: UserAccount) => {
     return user.role === 'agency' || user.role === 'owner' || Boolean(user.isOwner);
+  };
+
+  const setIsAuthenticated = (auth: boolean) => {
+    setIsAuthenticatedState(auth);
+    try {
+      if (auth) {
+        localStorage.setItem('visualsky_authenticated', 'true');
+      } else {
+        localStorage.removeItem('visualsky_authenticated');
+        localStorage.removeItem('visualsky_current_user');
+      }
+    } catch {}
+  };
+
+  const loginUser = (user: UserAccount) => {
+    setCurrentUserState(user);
+    setIsAuthenticatedState(true);
+    try {
+      localStorage.setItem('visualsky_authenticated', 'true');
+      localStorage.setItem('visualsky_current_user', JSON.stringify(user));
+    } catch {}
+    if (isAgencyUser(user)) {
+      setActiveTabState('owner');
+    } else {
+      setActiveTabState('dashboard');
+    }
   };
 
   const setActiveTab = (tab: string) => {
@@ -408,6 +446,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
 
         setCurrentUserState(syncedUser);
+        setIsAuthenticatedState(true);
+        try {
+          localStorage.setItem('visualsky_authenticated', 'true');
+        } catch {}
         setAllUsers(prev => {
           const exists = prev.some(u => u.email.toLowerCase() === syncedUser.email.toLowerCase() || u.id === syncedUser.id);
           if (exists) {
@@ -477,6 +519,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
 
         setCurrentUserState(syncedUser);
+        setIsAuthenticatedState(true);
+        try {
+          localStorage.setItem('visualsky_authenticated', 'true');
+        } catch {}
         setAllUsers(prev => {
           const exists = prev.some(u => u.email.toLowerCase() === syncedUser.email.toLowerCase() || u.id === syncedUser.id);
           if (exists) {
@@ -1568,28 +1614,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     signOutSupabase().catch(() => {});
     try {
       localStorage.removeItem('visualsky_current_user');
+      localStorage.removeItem('visualsky_authenticated');
       localStorage.removeItem('sb-wtylyugyemwndjcvskgq-auth-token');
     } catch {}
     
-    // Find or create signed out user
-    const clientAcc = allUsers.find(u => (u.role === 'client' || u.role === 'customer') && !u.isOwner) || {
-      id: `usr-guest-${Date.now()}`,
-      name: 'Signed Out Client',
-      email: '',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      role: 'client' as const,
-      isOwner: false,
-      plan: 'Free' as const,
-      bdtPlanLabel: 'Guest / Signed Out',
-      quotaUsed: 0,
-      quotaLimit: 500,
-      aiCredits: 0,
-      company: 'VisualSky Workspace',
-      title: 'Outreach Representative',
-      joinedAt: '2026-08-29'
-    };
-    setCurrentUser(clientAcc);
-    setActiveTabState('dashboard');
+    setIsAuthenticatedState(false);
     setIsLogoutConfirmOpen(false);
     
     addNotification({
@@ -1853,6 +1882,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         markAllNotificationsRead,
         clearAllNotifications,
         unreadNotificationCount,
+        isAuthenticated,
+        setIsAuthenticated,
+        loginUser,
         currentUser,
         setCurrentUser,
         allUsers,

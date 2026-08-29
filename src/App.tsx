@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
+import { LandingPage } from './components/landing/LandingPage';
 import { Navbar } from './components/layout/Navbar';
 import { Sidebar } from './components/layout/Sidebar';
 import { MobileNavDrawer } from './components/layout/MobileNavDrawer';
@@ -40,6 +41,7 @@ import {
 
 const MainContent: React.FC = () => {
   const { 
+    isAuthenticated,
     activeTab, 
     setActiveTab, 
     threads, 
@@ -50,6 +52,10 @@ const MainContent: React.FC = () => {
   } = useApp();
   
   const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
+  const [authInitialPortal, setAuthInitialPortal] = useState<'client' | 'agency'>('client');
+  const [authInitialMode, setAuthInitialMode] = useState<'signin' | 'signup' | 'forgot_password'>('signin');
+  const [authInitialPlan, setAuthInitialPlan] = useState<string>('scale');
+
   const [isProfileOpen, setIsProfileOpen] = useState<boolean>(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState<boolean>(false);
   const [isSendMailOpen, setIsSendMailOpen] = useState<boolean>(false);
@@ -57,10 +63,42 @@ const MainContent: React.FC = () => {
 
   const unreadCount = threads.filter(t => !t.isTrash && t.unreadCount > 0).length;
 
+  const handleOpenAuth = (
+    mode: 'signin' | 'signup' | 'forgot_password' = 'signin',
+    portal: 'client' | 'agency' = 'client',
+    plan: string = 'scale'
+  ) => {
+    setAuthInitialMode(mode);
+    setAuthInitialPortal(portal);
+    setAuthInitialPlan(plan);
+    setIsAuthOpen(true);
+  };
+
   const handleOpenSendMail = (lead?: Lead) => {
     setSelectedLeadForMail(lead);
     setIsSendMailOpen(true);
   };
+
+  // If user is not authenticated, render public Landing Page by default
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#080c14] text-slate-100 selection:bg-cyan-500/30 selection:text-cyan-200">
+        <LandingPage onOpenAuth={handleOpenAuth} />
+        
+        {/* Auth Modal for Sign in / Sign up / Forgot Password */}
+        <AuthModal 
+          isOpen={isAuthOpen} 
+          onClose={() => setIsAuthOpen(false)}
+          initialPortal={authInitialPortal}
+          initialMode={authInitialMode}
+          initialPlan={authInitialPlan}
+        />
+
+        {/* Global Notifications */}
+        <FloatingNotificationCorner />
+      </div>
+    );
+  }
 
   // Helper to render locked service view if customer's permission is turned off by Owner
   const renderRestrictedServiceView = (serviceName: string, serviceIcon: React.ReactNode) => (
@@ -296,7 +334,7 @@ const MainContent: React.FC = () => {
         isOpen={isMobileDrawerOpen} 
         onClose={() => setIsMobileDrawerOpen(false)}
         onOpenSendMail={() => handleOpenSendMail()}
-        onOpenAuth={() => setIsAuthOpen(true)}
+        onOpenAuth={(mode, portal) => handleOpenAuth(mode || 'signin', portal || 'client')}
         onRequestLogout={() => setIsLogoutConfirmOpen(true)}
         onOpenProfile={() => setIsProfileOpen(true)}
       />
@@ -307,7 +345,8 @@ const MainContent: React.FC = () => {
         onClose={() => setIsLogoutConfirmOpen(false)}
         onConfirm={() => {
           logout();
-          setIsAuthOpen(true);
+          setIsLogoutConfirmOpen(false);
+          handleOpenAuth('signin', 'client');
         }}
         currentUser={currentUser}
       />
@@ -316,11 +355,17 @@ const MainContent: React.FC = () => {
       <ProfileModal
         isOpen={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
-        onOpenAuth={() => setIsAuthOpen(true)}
+        onOpenAuth={(mode, portal) => handleOpenAuth(mode || 'signin', portal || 'client')}
       />
 
       {/* Auth Modal (Dual Client/Owner Portal with Eye visibility toggles & password confirmation) */}
-      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
+      <AuthModal 
+        isOpen={isAuthOpen} 
+        onClose={() => setIsAuthOpen(false)}
+        initialPortal={authInitialPortal}
+        initialMode={authInitialMode}
+        initialPlan={authInitialPlan}
+      />
 
       {/* Send Mail Cold Outreach Modal (Anti-spam score + signature auto-embed + scheduling) */}
       <SendMailModal 
