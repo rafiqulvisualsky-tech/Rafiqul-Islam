@@ -73,12 +73,9 @@ export const SMTPConnectModal: React.FC<SMTPConnectModalProps> = ({
   const [testTargetEmail, setTestTargetEmail] = useState<string>('');
   const [testSending, setTestSending] = useState<boolean>(false);
   const [testSendSuccess, setTestSendSuccess] = useState<boolean | null>(null);
-  const [hasRestoredDraft, setHasRestoredDraft] = useState<boolean>(false);
 
   // Pre-fill on open or edit
   useEffect(() => {
-    if (!isOpen) return;
-
     if (editingAccount) {
       setProvider(editingAccount.provider);
       setAccountName(editingAccount.name);
@@ -97,103 +94,10 @@ export const SMTPConnectModal: React.FC<SMTPConnectModalProps> = ({
       setIntervalSeconds(editingAccount.scheduleSettings?.intervalSeconds || 15);
       setJitterRandom(editingAccount.scheduleSettings?.jitterRandom ?? true);
       setActiveTab('credentials');
-      setHasRestoredDraft(false);
-    } else {
-      // Check if draft exists in localStorage
-      let draftFound = false;
-      try {
-        const savedDraft = localStorage.getItem('visualsky_smtp_form_draft');
-        if (savedDraft) {
-          const parsed = JSON.parse(savedDraft);
-          if (parsed && (parsed.username || parsed.host || parsed.password || parsed.accountName)) {
-            if (parsed.provider) setProvider(parsed.provider);
-            if (parsed.accountName) setAccountName(parsed.accountName);
-            if (parsed.host) setHost(parsed.host);
-            if (parsed.port) setPort(parsed.port);
-            if (parsed.encryption) setEncryption(parsed.encryption);
-            if (parsed.authMethod) setAuthMethod(parsed.authMethod);
-            if (parsed.domainWebmailUrl !== undefined) setDomainWebmailUrl(parsed.domainWebmailUrl);
-            if (parsed.username) setUsername(parsed.username);
-            if (parsed.password) setPassword(parsed.password);
-            if (parsed.fromName) setFromName(parsed.fromName);
-            if (parsed.fromEmail) setFromEmail(parsed.fromEmail);
-            if (parsed.replyToEmail !== undefined) setReplyToEmail(parsed.replyToEmail);
-            if (parsed.dailyLimit) setDailyLimit(parsed.dailyLimit);
-            if (parsed.warmupMode) setWarmupMode(parsed.warmupMode);
-            if (parsed.intervalSeconds) setIntervalSeconds(parsed.intervalSeconds);
-            if (parsed.jitterRandom !== undefined) setJitterRandom(parsed.jitterRandom);
-            if (parsed.activeTab) setActiveTab(parsed.activeTab);
-            draftFound = true;
-            setHasRestoredDraft(true);
-          }
-        }
-      } catch {}
-
-      if (!draftFound) {
-        handleProviderPick(initialProvider || 'domain_webmail');
-        setHasRestoredDraft(false);
-      }
+    } else if (isOpen) {
+      handleProviderPick(initialProvider || 'domain_webmail');
     }
-  }, [isOpen, editingAccount]);
-
-  // Auto-save form draft on any change (so switching tabs/browsers never loses data)
-  useEffect(() => {
-    if (!isOpen || editingAccount) return;
-    try {
-      const draftData = {
-        provider,
-        accountName,
-        host,
-        port,
-        encryption,
-        authMethod,
-        domainWebmailUrl,
-        username,
-        password,
-        fromName,
-        fromEmail,
-        replyToEmail,
-        dailyLimit,
-        warmupMode,
-        intervalSeconds,
-        jitterRandom,
-        activeTab
-      };
-      localStorage.setItem('visualsky_smtp_form_draft', JSON.stringify(draftData));
-    } catch {}
-  }, [
-    isOpen,
-    editingAccount,
-    provider,
-    accountName,
-    host,
-    port,
-    encryption,
-    authMethod,
-    domainWebmailUrl,
-    username,
-    password,
-    fromName,
-    fromEmail,
-    replyToEmail,
-    dailyLimit,
-    warmupMode,
-    intervalSeconds,
-    jitterRandom,
-    activeTab
-  ]);
-
-  const handleClearDraft = () => {
-    try {
-      localStorage.removeItem('visualsky_smtp_form_draft');
-    } catch {}
-    setHasRestoredDraft(false);
-    setPassword('');
-    setFromEmail('');
-    setReplyToEmail('');
-    handleProviderPick('domain_webmail');
-    setActiveTab('preset');
-  };
+  }, [editingAccount, isOpen, initialProvider]);
 
   if (!isOpen) return null;
 
@@ -423,27 +327,13 @@ export const SMTPConnectModal: React.FC<SMTPConnectModalProps> = ({
       if (onSuccess) onSuccess(newAcc);
     }
 
-    try {
-      localStorage.removeItem('visualsky_smtp_form_draft');
-      localStorage.removeItem('visualsky_smtp_modal_open');
-    } catch {}
-
     confetti({ particleCount: 60, spread: 70 });
     onClose();
   };
 
   return (
-    <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in overflow-y-auto"
-      onClick={(e) => {
-        // Prevent accidental backdrop dismissals when user clicks outside while switching windows/tabs
-        e.stopPropagation();
-      }}
-    >
-      <div 
-        className="bg-[#090d16] border border-slate-800 w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col my-auto max-h-[92vh] relative"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in overflow-y-auto">
+      <div className="bg-[#090d16] border border-slate-800 w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col my-auto max-h-[92vh]">
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-slate-800 bg-gradient-to-r from-blue-950/40 via-slate-900 to-cyan-950/40 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -451,43 +341,23 @@ export const SMTPConnectModal: React.FC<SMTPConnectModalProps> = ({
               <Server className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-base sm:text-lg font-bold text-slate-100 flex items-center gap-2">
-                  {editingAccount ? 'Edit Outbound SMTP Relay' : 'Connect Outbound SMTP Relay'}
-                </h2>
+              <h2 className="text-base sm:text-lg font-bold text-slate-100 flex items-center gap-2">
+                {editingAccount ? 'Edit Outbound SMTP Relay' : 'Connect Outbound SMTP Relay'}
                 <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-extrabold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded">
                   Domain Webmail & Multi-Relay
                 </span>
-                {!editingAccount && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 rounded-full">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Auto-save enabled (Tab-switch safe)
-                  </span>
-                )}
-              </div>
+              </h2>
               <p className="text-xs text-slate-400">
-                Configure your custom domain webmail, Google Workspace, SES, or cPanel relay with persistent input safety.
+                Configure your custom domain webmail, Google Workspace, SES, or cPanel relay with live handshake verification.
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {!editingAccount && (hasRestoredDraft || username || host) && (
-              <button
-                type="button"
-                onClick={handleClearDraft}
-                className="text-[11px] text-slate-400 hover:text-rose-400 transition underline cursor-pointer hidden sm:inline-block"
-                title="Discard saved draft and reset fields"
-              >
-                Clear Draft
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition shrink-0 cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition shrink-0 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Tab Navigation */}
