@@ -40,13 +40,13 @@ interface AuthModalProps {
   initialPortal?: 'client' | 'agency';
 }
 
-// BDT Subscription Plans for Clients (Strictly BDT ৳ - No USD Default)
+// BDT Subscription Plans for Clients (Strictly BDT - No USD Default)
 export const BDT_CLIENT_PLANS = [
   {
     id: 'starter',
     name: 'Starter Growth',
     priceBDT: 1999,
-    priceDisplay: '৳১,৯৯৯',
+    priceDisplay: 'BDT 1,999',
     billingCycle: '/ month',
     planCode: 'Pro' as const,
     quotaLimit: 1500,
@@ -64,7 +64,7 @@ export const BDT_CLIENT_PLANS = [
     id: 'scale',
     name: 'Scale Business',
     priceBDT: 4999,
-    priceDisplay: '৳৪,৯৯৯',
+    priceDisplay: 'BDT 4,999',
     billingCycle: '/ month',
     planCode: 'Agency' as const,
     quotaLimit: 10000,
@@ -84,7 +84,7 @@ export const BDT_CLIENT_PLANS = [
     id: 'enterprise',
     name: 'Enterprise Suite',
     priceBDT: 9999,
-    priceDisplay: '৳৯,৯৯৯',
+    priceDisplay: 'BDT 9,999',
     billingCycle: '/ month',
     planCode: 'Enterprise' as const,
     quotaLimit: 35000,
@@ -103,7 +103,7 @@ export const BDT_CLIENT_PLANS = [
 // App Owner's Linked Payout Accounts in Bangladesh (BDT)
 export const OWNER_PAYOUT_ACCOUNTS = {
   bKash: {
-    gatewayName: 'bKash (বিকাশ)',
+    gatewayName: 'bKash',
     number: '01712-345678',
     cleanNumber: '01712345678',
     type: 'Merchant / Personal (Send Money & Payment)',
@@ -116,7 +116,7 @@ export const OWNER_PAYOUT_ACCOUNTS = {
     instruction: 'Go to your bKash App > Select "Send Money" or "Make Payment" > Enter Owner Account Number below > Use Reference: VSKY.'
   },
   Nagad: {
-    gatewayName: 'Nagad (নগদ)',
+    gatewayName: 'Nagad',
     number: '01812-345678',
     cleanNumber: '01812345678',
     type: 'Merchant Pay / Send Money',
@@ -129,7 +129,7 @@ export const OWNER_PAYOUT_ACCOUNTS = {
     instruction: 'Go to your Nagad App > Select "Send Money" or "Merchant Pay" > Enter Owner Account Number below > Use Reference: VSKY.'
   },
   Rocket: {
-    gatewayName: 'Rocket DBBL (রকেট)',
+    gatewayName: 'Rocket (DBBL)',
     number: '01912-345678-9',
     cleanNumber: '019123456789',
     type: 'Merchant / Bill Pay',
@@ -181,7 +181,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
 
-  // Client Payment State (BDT ৳)
+  // Client Payment State (BDT)
   const [selectedPlanId, setSelectedPlanId] = useState<string>('scale');
   const [selectedGateway, setSelectedGateway] = useState<'bKash' | 'Nagad' | 'Rocket'>('bKash');
   const [senderWalletNumber, setSenderWalletNumber] = useState<string>('');
@@ -283,7 +283,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const isDuplicate = allUsers.some(u => u.email.toLowerCase() === targetEmail);
       if (isDuplicate) {
         setIsLoading(false);
-        setErrorMessage(`⚠️ এই ইমেইল (${targetEmail}) দিয়ে ইতিপূর্বেই একটি অ্যাকাউন্ট খোলা আছে। একই ইমেইল দিয়ে ২ বার সাইন আপ করা সম্ভব নয়। অনুগ্রহ করে "Sign In" বা "Forgot Password" ব্যবহার করুন।`);
+        setErrorMessage(`⚠️ This email (${targetEmail}) is already registered. Duplicate sign-ups with the same email are not permitted. Please Sign In or use "Forgot Password".`);
         return;
       }
     }
@@ -473,7 +473,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     const normalizedEmail = email.trim().toLowerCase();
     const existingAccount = allUsers.find(u => u.email.toLowerCase() === normalizedEmail);
     if (existingAccount) {
-      setErrorMessage(`⚠️ এই ইমেইল (${email.trim()}) দিয়ে ইতিপূর্বেই একটি ${existingAccount.role === 'agency' ? 'Agency Master' : 'Client'} অ্যাকাউন্ট নিবন্ধিত আছে! একই ইমেইল দিয়ে ২ বার সাইন আপ করা যাবে না। অনুগ্রহ করে "Sign In" করুন অথবা "Forgot Password" দিয়ে পাসওয়ার্ড রিসেট করুন।`);
+      setErrorMessage(`⚠️ This email (${email.trim()}) is already registered with an existing ${existingAccount.role === 'agency' ? 'Agency Master' : 'Client'} account. Duplicate sign-ups with the same email are not permitted. Please Sign In or use "Forgot Password".`);
       return false;
     }
 
@@ -658,14 +658,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     const targetEmail = forgotEmail.trim().toLowerCase();
     if (!targetEmail || !targetEmail.includes('@')) {
-      setErrorMessage('অনুগ্রহ করে সঠিক রেজিস্টার্ড ইমেইল অ্যাড্রেস লিখুন। (Please enter your registered account email.)');
+      setErrorMessage('Please enter a valid registered work email address.');
       return;
     }
 
     // Verify if email exists in database/accounts list
     const existingUser = allUsers.find(u => u.email.toLowerCase() === targetEmail);
     if (!existingUser) {
-      setErrorMessage(`⚠️ "${forgotEmail.trim()}" ইমেইলটি আমাদের সিস্টেমে খুঁজে পাওয়া যায়নি। অনুগ্রহ করে সঠিক ইমেইল দিন অথবা সাইন আপ করুন।`);
+      setErrorMessage(`⚠️ Email "${forgotEmail.trim()}" was not found in our records. Please check the email address or register for an account.`);
       return;
     }
 
@@ -677,10 +677,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setForgotOtp(demoOtp); // pre-populate for frictionless verification
       setForgotPhase('verify');
       setIsLoading(false);
-      setSuccessMessage(`✅ পাসওয়ার্ড রিসেট ওয়ান-টাইম কোড (OTP) জেনারেট হয়েছে: ${demoOtp}`);
+      setSuccessMessage(`✅ Password reset OTP generated: ${demoOtp}`);
     } catch (err: any) {
       setIsLoading(false);
-      setErrorMessage(err?.message || 'পাসওয়ার্ড রিসেট কোড পাঠাতে সমস্যা হয়েছে।');
+      setErrorMessage(err?.message || 'Failed to send password reset code.');
     }
   };
 
@@ -689,29 +689,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMessage('');
 
     if (forgotOtp.trim() !== generatedOtp.trim()) {
-      setErrorMessage('ভুল ওয়ান-টাইম পিন (OTP Code)। দয়া করে সঠিক কোডটি লিখুন।');
+      setErrorMessage('Invalid OTP Code. Please enter the correct 6-digit verification code.');
       return;
     }
     if (newResetPassword.length < 6) {
-      setErrorMessage('পাসওয়ার্ড ন্যূনতম ৬ অক্ষরের হতে হবে।');
+      setErrorMessage('Password must be at least 6 characters long.');
       return;
     }
     if (newResetPassword !== confirmResetPassword) {
-      setErrorMessage('দুটো পাসওয়ার্ড মেলেনি (Passwords do not match)।');
+      setErrorMessage('Passwords do not match. Please verify.');
       return;
     }
 
     const resetSuccess = resetUserPasswordByEmail(forgotEmail.trim(), newResetPassword);
     if (!resetSuccess) {
-      setErrorMessage('এই ইমেইল সম্পর্কিত কোনো অ্যাকাউন্ট পাওয়া যায়নি।');
+      setErrorMessage('No registered account found for this email address.');
       return;
     }
 
     setForgotPhase('success');
     setEmail(forgotEmail.trim()); // pre-fill login email for convenience
     addNotification({
-      title: 'পাসওয়ার্ড সফলভাবে পরিবর্তিত হয়েছে! 🔑',
-      message: `${forgotEmail} এর পাসওয়ার্ড আপডেট করা হয়েছে। এখন নতুন পাসওয়ার্ড দিয়ে সাইন ইন করুন।`,
+      title: 'Password Successfully Reset! 🔑',
+      message: `Password for ${forgotEmail} has been updated. You can now sign in with your new password.`,
       type: 'system'
     });
   };
@@ -814,7 +814,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <div className="flex items-center gap-1.5">
                       <h3 className="font-bold text-sm text-slate-100">Client Portal</h3>
                       <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-purple-500/10 text-purple-300 border border-purple-500/20">
-                        Paid Access (BDT ৳)
+                        Paid Access (BDT)
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
@@ -937,7 +937,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                       : 'text-amber-400/90 hover:text-amber-300 hover:bg-amber-500/10'
                   }`}
-                  title="পাসওয়ার্ড ভুলে গেছেন? রিসেট করতে ক্লিক করুন"
+                  title="Forgot your password? Click here to reset"
                 >
                   <KeyRound className="w-3.5 h-3.5" />
                   <span>Forgot Password?</span>
@@ -1068,10 +1068,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           setAuthMode('forgot_password');
                         }}
                         className="text-[11px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 transition cursor-pointer"
-                        title="পাসওয়ার্ড ভুলে গেছেন? রিসেট করতে ক্লিক করুন"
+                        title="Forgot your password? Click here to reset"
                       >
                         <KeyRound className="w-3 h-3" />
-                        <span>Forgot Password? (পাসওয়ার্ড ভুলে গেছেন?)</span>
+                        <span>Forgot Password?</span>
                       </button>
                     </div>
                     <div className="relative">
@@ -1099,7 +1099,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-between">
                   <div className="flex items-center gap-2 text-[11px] text-amber-300">
                     <KeyRound className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span>পাসওয়ার্ড মনে নেই? (Forgot Password)</span>
+                    <span>Trouble signing in? (Forgot Password)</span>
                   </div>
                   <button
                     type="button"
@@ -1363,7 +1363,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <span>Client Workspace: Step 1 of 2</span>
                   </span>
                   <span className="text-[11px] font-bold text-slate-400">
-                    Payment in BDT (৳) Next
+                    Payment in BDT Next
                   </span>
                 </div>
 
@@ -1496,7 +1496,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   type="submit"
                   className="w-full py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-600/20 transition cursor-pointer mt-2"
                 >
-                  <span>Proceed to Subscription Payment (BDT ৳)</span>
+                  <span>Proceed to Subscription Payment (BDT)</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
 
@@ -1514,7 +1514,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             )}
 
             {/* --------------------------------------------------------------------- */}
-            {/* SUB-FLOW 3B: CLIENT SIGN UP - STEP 2 (BDT ৳ Payment & Direct Payout)  */}
+            {/* SUB-FLOW 3B: CLIENT SIGN UP - STEP 2 (BDT Payment & Direct Payout)    */}
             {/* --------------------------------------------------------------------- */}
             {authMode === 'signup' && portalType === 'client' && clientSignupSubStep === 2 && (
               <form onSubmit={handleClientPaymentAndActivate} className="space-y-4">
@@ -1534,7 +1534,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </p>
                 </div>
 
-                {/* Plan Selector (BDT ৳) */}
+                {/* Plan Selector (BDT) */}
                 <div className="space-y-1.5">
                   <label className="block text-[11px] font-bold text-slate-300">
                     1. Select Subscription Plan:

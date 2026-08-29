@@ -395,7 +395,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           role: role,
           isOwner: isAgency,
           plan: metadata.plan || (isAgency ? 'Enterprise' : 'Pro'),
-          bdtPlanLabel: metadata.bdt_plan_label || (isAgency ? 'Agency Master (Free Unlimited)' : 'Scale Business (৳৪,৯৯৯/mo)'),
+          bdtPlanLabel: metadata.bdt_plan_label || (isAgency ? 'Agency Master (Free Unlimited)' : 'Scale Business (BDT 4,999/mo)'),
           quotaUsed: 0,
           quotaLimit: isAgency ? 50000 : 5000,
           aiCredits: isAgency ? 10000 : 2500,
@@ -464,7 +464,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           role: role,
           isOwner: isAgency,
           plan: metadata.plan || (isAgency ? 'Enterprise' : 'Pro'),
-          bdtPlanLabel: metadata.bdt_plan_label || (isAgency ? 'Agency Master (Free Unlimited)' : 'Scale Business (৳৪,৯৯৯/mo)'),
+          bdtPlanLabel: metadata.bdt_plan_label || (isAgency ? 'Agency Master (Free Unlimited)' : 'Scale Business (BDT 4,999/mo)'),
           quotaUsed: 0,
           quotaLimit: isAgency ? 50000 : 5000,
           aiCredits: isAgency ? 10000 : 2500,
@@ -1593,8 +1593,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsLogoutConfirmOpen(false);
     
     addNotification({
-      title: 'লগআউট সম্পন্ন হয়েছে (Logged Out) 🚪',
-      message: 'আপনার বর্তমান সেশনটি নিরাপদভাবে লগআউট করা হয়েছে। পুনরায় প্রবেশ করতে সাইন ইন করুন।',
+      title: 'Logged Out Successfully 🚪',
+      message: 'Your active session has been securely closed. Sign in anytime to resume work.',
       type: 'system'
     });
   };

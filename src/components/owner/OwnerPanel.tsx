@@ -427,7 +427,7 @@ export const OwnerPanel: React.FC = () => {
             <div>
               <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
                 <CreditCard className="w-4 h-4 text-cyan-400" />
-                <span>Client Subscriptions & Direct Merchant Payout Routing (BDT ৳)</span>
+                <span>Client Subscriptions & Direct Merchant Payout Routing (BDT)</span>
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
                 Manage BDT pricing tiers and monitor client subscription payments routed directly to your linked accounts.
@@ -487,9 +487,9 @@ export const OwnerPanel: React.FC = () => {
             </div>
           </div>
 
-          {/* Client Subscription Tiers (BDT ৳) */}
+          {/* Client Subscription Tiers (BDT) */}
           <div className="space-y-3">
-            <div className="text-xs font-bold text-slate-300">Client Subscription Plans (BDT ৳)</div>
+            <div className="text-xs font-bold text-slate-300">Client Subscription Plans (BDT)</div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {BDT_CLIENT_PLANS.map((p) => {
                 const isCurrent = currentUser.plan === p.planCode;
@@ -598,7 +598,7 @@ export const OwnerPanel: React.FC = () => {
                           </td>
                           <td className="py-2.5 font-mono text-[11px] text-slate-400">{p.senderPhone}</td>
                           <td className="py-2.5 font-mono font-bold text-amber-300">{p.trxId}</td>
-                          <td className="py-2.5 font-mono font-black text-emerald-400">৳{p.amountBDT.toLocaleString()}</td>
+                          <td className="py-2.5 font-mono font-black text-emerald-400">BDT {p.amountBDT.toLocaleString()}</td>
                           <td className="py-2.5">
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                               Paid & Verified
