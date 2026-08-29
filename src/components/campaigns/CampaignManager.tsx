@@ -108,10 +108,10 @@ export const CampaignManager: React.FC = () => {
 
   // 6-Step Wizard State
   // Step 1: Basic Info
-  const [campaignTitle, setCampaignTitle] = useState<string>('Q3 Enterprise Outreach Campaign');
-  const [senderName, setSenderName] = useState<string>(currentUser.name || 'Outreach Specialist');
-  const [senderEmail, setSenderEmail] = useState<string>(currentUser.email || 'outreach@visualsky.io');
-  const [campaignNiche, setCampaignNiche] = useState<string>('B2B SaaS & Technology');
+  const [campaignTitle, setCampaignTitle] = useState<string>('');
+  const [senderName, setSenderName] = useState<string>(currentUser.name || '');
+  const [senderEmail, setSenderEmail] = useState<string>(currentUser.email || '');
+  const [campaignNiche, setCampaignNiche] = useState<string>('');
 
   // Step 2: Select SMTP (with Multi-tag, Provider Filter & Multi-mailbox Selection)
   const activeSmtps = useMemo(() => smtpAccounts.filter(s => !s.isTrash), [smtpAccounts]);
@@ -332,16 +332,9 @@ export const CampaignManager: React.FC = () => {
     {
       stepNumber: 1,
       delayDays: 0,
-      subject: 'Scaling cold outreach pipeline for {{company}}',
-      body: 'Hi {{name}},\n\nLoved {{company}}\'s recent expansion! Quick question: are you managing cold email deliverability in-house or looking for automated 99% inbox placement?\n\nWould you be open to a 2-minute overview this Thursday?\n\nBest regards,\n' + (currentUser.name || 'Outreach Team'),
+      subject: '',
+      body: '',
       triggerCondition: 'all'
-    },
-    {
-      stepNumber: 2,
-      delayDays: 7,
-      subject: 'Quick follow-up on {{company}} deliverability',
-      body: 'Hi {{name}},\n\nFollowing up on my note from last week. We helped a similar team achieve a 3.5x positive reply rate increase with automated multi-domain rotations.\n\nWorth a quick 60-second glance?\n\nBest,\n' + (currentUser.name || 'Outreach Team'),
-      triggerCondition: 'no_reply_7d'
     }
   ]);
 

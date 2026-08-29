@@ -79,12 +79,12 @@ export const LeadDirectory: React.FC<LeadDirectoryProps> = ({ onOpenSendMail }) 
     location: 'United States',
     status: 'new',
     icebreaker: '',
-    tags: [leadTags[0]?.name || 'SaaS Decision Makers']
+    tags: leadTags[0]?.name ? [leadTags[0].name] : []
   });
 
   // File Upload Modal
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
-  const [uploadSelectedTag, setUploadSelectedTag] = useState<string>(leadTags[0]?.name || 'CSV Uploaded');
+  const [uploadSelectedTag, setUploadSelectedTag] = useState<string>(leadTags[0]?.name || '');
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
   const [parsedLeadsPreview, setParsedLeadsPreview] = useState<Partial<Lead>[]>([]);
   const [uploadError, setUploadError] = useState<string>('');

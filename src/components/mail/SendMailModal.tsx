@@ -47,16 +47,8 @@ export const SendMailModal: React.FC<SendMailModalProps> = ({
   
   const availableTemplates = emailTemplates && emailTemplates.length > 0 ? emailTemplates : INITIAL_TEMPLATES;
   
-  const [subject, setSubject] = useState<string>('Quick collaboration idea for {{company}}');
-  const [body, setBody] = useState<string>(`Hi {{name}},
-
-I noticed your recent work at {{company}} and wanted to reach out directly.
-
-We help fast-growing teams scale their cold outreach with guaranteed 99.8% inbox deliverability and automated 7-day follow-ups.
-
-Would you be open to a 2-minute intro?
-
-Best regards,`);
+  const [subject, setSubject] = useState<string>('');
+  const [body, setBody] = useState<string>('');
 
   const [sendMode, setSendMode] = useState<'instant' | 'scheduled'>('instant');
   const [scheduledDateTime, setScheduledDateTime] = useState<string>('2026-08-17T09:30');

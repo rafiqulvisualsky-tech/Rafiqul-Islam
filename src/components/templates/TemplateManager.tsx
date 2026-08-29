@@ -39,105 +39,7 @@ const DEFAULT_CATEGORIES: TemplateCategoryItem[] = [
   { id: 'custom', name: 'custom', label: 'Custom' }
 ];
 
-export const INITIAL_TEMPLATES: EmailTemplate[] = [
-  {
-    id: 'tmpl-1',
-    title: 'High-Conversion SaaS Value Pitch',
-    category: 'cold_outreach',
-    subject: 'Scaling cold outreach pipeline for {{company}}',
-    body: `Hi {{name}},
-
-Loved {{company}}'s recent product milestone and roadmap announcements!
-
-I noticed your team has been rapidly expanding your pipeline this quarter. Quick question: are you currently managing outbound lead generation across multiple dedicated domains, or relying mostly on inbound?
-
-At Visual Sky, we built a high-deliverability cold outreach platform that guarantees 99.8% inbox landing with automated 7-day and 14-day follow-up sequences.
-
-Would you be open to a 2-minute overview this Thursday?
-
-Best regards,`,
-    tags: ['SaaS', 'High Reply', 'Cold Pitch'],
-    usageCount: 384,
-    replyRatePercent: 38.4,
-    createdAt: '2026-08-01'
-  },
-  {
-    id: 'tmpl-2',
-    title: '7-Day Quick Follow-up (Friendly Ping)',
-    category: 'followup_7d',
-    subject: 'Quick follow-up on {{company}} outreach',
-    body: `Hi {{name}},
-
-Following up on my note from last week. I know you're super busy managing operations at {{company}}.
-
-Just wanted to share a quick case study showing how a similar team scaled their positive reply rate by 3.2x while keeping spam rates under 0.1%.
-
-Worth a 60-second glance?
-
-Cheers,`,
-    tags: ['7-Day', 'Follow-up', 'Case Study'],
-    usageCount: 290,
-    replyRatePercent: 42.1,
-    createdAt: '2026-08-05'
-  },
-  {
-    id: 'tmpl-3',
-    title: '14-Day Value Drop & Metric Audit',
-    category: 'followup_14d',
-    subject: 'Idea for {{company}} outbound deliverability',
-    body: `Hi {{name}},
-
-I checked out {{website}} and noticed your outbound domain configuration could benefit from automated MX/SPF/DKIM handshake rotations.
-
-We put together a short deliverability report for {{company}} showing where you might be losing 15-20% of pipeline replies to the spam folder.
-
-Happy to send over the PDF if you're interested?
-
-Best,`,
-    tags: ['14-Day', 'Value Add', 'Audit'],
-    usageCount: 175,
-    replyRatePercent: 31.8,
-    createdAt: '2026-08-08'
-  },
-  {
-    id: 'tmpl-4',
-    title: '30-Day Breakup Email (Permission to Close)',
-    category: 'breakup_30d',
-    subject: 'Closing the loop on {{company}} outreach',
-    body: `Hi {{name}},
-
-I haven't heard back, so I assume cold outreach optimization isn't a priority for {{company}} right now.
-
-I won't follow up again so I don't clutter your inbox. If you ever need to scale outbound without risking your primary domain reputation, feel free to reach back out anytime.
-
-Wishing you and {{company}} continued success!
-
-Best regards,`,
-    tags: ['30-Day', 'Breakup', 'Psychology'],
-    usageCount: 210,
-    replyRatePercent: 29.5,
-    createdAt: '2026-08-10'
-  },
-  {
-    id: 'tmpl-5',
-    title: 'Agency Growth & White-Label Demo',
-    category: 'agency_pitch',
-    subject: 'White-label lead scraper & cold email engine for {{company}}',
-    body: `Hi {{name}},
-
-Impressed by the client roster and digital campaigns at {{company}}.
-
-We provide high-volume agencies with private SMTP infrastructure, automated lead enrichment, and client sub-accounts with custom permission controls.
-
-Would you have 10 minutes for a brief walkthrough this week?
-
-Best regards,`,
-    tags: ['Agency', 'White Label', 'Client Portal'],
-    usageCount: 140,
-    replyRatePercent: 35.0,
-    createdAt: '2026-08-12'
-  }
-];
+export const INITIAL_TEMPLATES: EmailTemplate[] = [];
 
 export const TemplateManager: React.FC = () => {
   const { setActiveTab, addNotification, emailTemplates, setEmailTemplates } = useApp();
@@ -159,7 +61,7 @@ export const TemplateManager: React.FC = () => {
   const [showAddCatModal, setShowAddCatModal] = useState<boolean>(false);
   const [newCatLabel, setNewCatLabel] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [activeTemplate, setActiveTemplate] = useState<EmailTemplate>(() => activeEmailTemplates[0] || INITIAL_TEMPLATES[0]);
+  const [activeTemplate, setActiveTemplate] = useState<EmailTemplate | null>(() => activeEmailTemplates[0] || null);
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [templateToDelete, setTemplateToDelete] = useState<EmailTemplate | null>(null);
@@ -174,6 +76,8 @@ export const TemplateManager: React.FC = () => {
         }
         return activeEmailTemplates[0];
       });
+    } else {
+      setActiveTemplate(null);
     }
   }, [activeEmailTemplates]);
 
@@ -299,8 +203,8 @@ export const TemplateManager: React.FC = () => {
     if (!id) return;
     const updated = emailTemplates.filter(t => t.id !== id);
     saveToStorage(updated);
-    if (activeTemplate?.id === id && updated.length > 0) {
-      setActiveTemplate(updated[0]);
+    if (activeTemplate?.id === id) {
+      setActiveTemplate(updated.length > 0 ? updated[0] : null);
     }
   };
 

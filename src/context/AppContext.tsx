@@ -225,161 +225,35 @@ const DEFAULT_COLUMNS: ColumnSetting[] = [
 // Clean empty signature constant (No hardcoded contact or branding injection!)
 export const DEFAULT_USER_SIGNATURE = '';
 
-// Initial Lead Tags
-const INITIAL_TAGS: LeadTag[] = [
-  { id: 'tag-1', name: 'SaaS Decision Makers', color: 'cyan', description: 'Founders, CEOs and VPs at tech companies', createdAt: '2026-08-01' },
-  { id: 'tag-2', name: 'High Priority VIP', color: 'emerald', description: 'High-value enterprise target accounts', createdAt: '2026-08-01' },
-  { id: 'tag-3', name: 'AI Cold Outreach', color: 'purple', description: 'Mined via Gemini 3.7 Lead Intelligence', createdAt: '2026-08-05' },
-  { id: 'tag-4', name: 'Q3 Scale Campaign', color: 'blue', description: 'Active Q3 2026 outbound cohort', createdAt: '2026-08-10' },
-  { id: 'tag-5', name: 'Follow-up Needed', color: 'amber', description: 'Leads requiring 7d / 14d follow-up', createdAt: '2026-08-12' },
-];
-
-// Initial Verified Leads
-const INITIAL_LEADS: Lead[] = [
-  {
-    id: 'lead-1',
-    name: 'Sarah Jenkins',
-    title: 'VP of Growth & Marketing',
-    company: 'Linear Systems',
-    email: 'sarah.jenkins@linear.app',
-    phone: '+1 (415) 555-0142',
-    website: 'https://linear.app',
-    niche: 'Productivity SaaS',
-    location: 'San Francisco, CA, USA',
-    source: 'LinkedIn & Gemini Deep AI',
-    companySize: '51-200 employees',
-    leadScore: 97,
-    icebreaker: 'Loved Linear’s latest roadmap planning feature release last Tuesday!',
-    socials: { linkedin: 'https://linkedin.com/in/sarahjenkins-linear', twitter: 'https://x.com/sarahj_growth' },
-    status: 'replied',
-    websiteStatus: 'alive',
-    responseTimeMs: 94,
-    lastActivityDate: '2026-08-16T18:30:00Z',
-    daysAgo: 1,
-    sentCampaigns: ['SaaS Scale Outreach Q3'],
-    customNotes: 'Very interested in cold email warm-up automation. Scheduled meeting for next Thursday.',
-    tags: ['SaaS Decision Makers', 'High Priority VIP'],
-    openCount: 4,
-    lastOpenedAt: '2026-08-16T18:22:00Z',
-    isReplied: true,
-    lastRepliedAt: '2026-08-16T18:30:00Z',
-    replySnippet: 'Hi, thanks for reaching out! We would love to review your deliverability deck.',
-    isTrash: false,
-  },
-  {
-    id: 'lead-2',
-    name: 'Marcus Vance',
-    title: 'Chief Technology Officer',
-    company: 'Retool Cloud',
-    email: 'marcus.v@retool.com',
-    phone: '+1 (415) 890-3341',
-    website: 'https://retool.com',
-    niche: 'Developer Tools',
-    location: 'New York, NY, USA',
-    source: 'LinkedIn & AI Miner',
-    companySize: '201-500 employees',
-    leadScore: 94,
-    icebreaker: 'Impressed by Retool’s recent AI workflows integration update.',
-    socials: { linkedin: 'https://linkedin.com/in/marcusvance-cto', github: 'https://github.com/mvance-dev' },
-    status: 'opened',
-    websiteStatus: 'alive',
-    responseTimeMs: 78,
-    lastActivityDate: '2026-08-10T14:15:00Z',
-    daysAgo: 7,
-    sentCampaigns: ['SaaS Scale Outreach Q3'],
-    customNotes: 'Opened the cold email 3 times. Ideal candidate for 7-day automated follow-up sequence.',
-    tags: ['SaaS Decision Makers', 'Follow-up Needed'],
-    openCount: 3,
-    lastOpenedAt: '2026-08-10T14:15:00Z',
-    isReplied: false,
-    isTrash: false,
-  },
-  {
-    id: 'lead-3',
-    name: 'Elena Rostova',
-    title: 'Founder & CEO',
-    company: 'Supabase Data Labs',
-    email: 'elena.rostova@supabase.com',
-    phone: '+1 (650) 412-9820',
-    website: 'https://supabase.com',
-    niche: 'Database Infrastructure',
-    location: 'Austin, TX, USA',
-    source: 'Twitter/X & AI Miner',
-    companySize: '51-200 employees',
-    leadScore: 99,
-    icebreaker: 'Huge fan of Supabase’s Postgres vector embeddings architecture.',
-    socials: { linkedin: 'https://linkedin.com/in/elenarostova-ceo', twitter: 'https://x.com/elena_supabase' },
-    status: 'replied',
-    websiteStatus: 'alive',
-    responseTimeMs: 82,
-    lastActivityDate: '2026-08-17T08:45:00Z',
-    daysAgo: 0,
-    sentCampaigns: ['Enterprise Deliverability Q3'],
-    customNotes: 'Replied asking about multi-domain SMTP rotation.',
-    tags: ['High Priority VIP', 'Q3 Scale Campaign'],
-    openCount: 5,
-    lastOpenedAt: '2026-08-17T08:40:00Z',
-    isReplied: true,
-    lastRepliedAt: '2026-08-17T08:45:00Z',
-    replySnippet: 'Do you support custom SMTP rotation with Google Workspace & Amazon SES simultaneously?',
-    isTrash: false,
-  },
-  {
-    id: 'lead-4',
-    name: 'David Sterling',
-    title: 'Head of Growth Marketing',
-    company: 'Vercel Platform',
-    email: 'david.sterling@vercel.com',
-    phone: '+1 (415) 763-8821',
-    website: 'https://vercel.com',
-    niche: 'Web Infrastructure',
-    location: 'San Francisco, CA, USA',
-    source: 'LinkedIn & Gemini Deep AI',
-    companySize: '500+ employees',
-    leadScore: 91,
-    icebreaker: 'Loved the Next.js conference presentation on edge serverless functions.',
-    socials: { linkedin: 'https://linkedin.com/in/davidsterling-growth' },
-    status: 'contacted',
-    websiteStatus: 'alive',
-    responseTimeMs: 65,
-    lastActivityDate: '2026-08-03T11:00:00Z',
-    daysAgo: 14,
-    sentCampaigns: ['SaaS Scale Outreach Q3'],
-    customNotes: 'No response after 14 days. Needs 14-day value-add re-engagement email.',
-    tags: ['Follow-up Needed'],
-    openCount: 1,
-    lastOpenedAt: '2026-08-03T11:05:00Z',
-    isReplied: false,
-    isTrash: false,
-  },
-  {
-    id: 'lead-5',
-    name: 'Chloe Dubois',
-    title: 'Managing Director',
-    company: 'Dubois Growth Agency',
-    email: 'chloe@duboisagency.co',
-    phone: '+44 20 7946 0912',
-    website: 'https://duboisagency.co',
-    niche: 'B2B Marketing Agency',
-    location: 'London, UK',
-    source: 'Google Maps & AI Scraper',
-    companySize: '11-50 employees',
-    leadScore: 89,
-    icebreaker: 'Admired the case study on client acquisition scaling in the UK tech market.',
-    socials: { linkedin: 'https://linkedin.com/in/chloedubois-agency', instagram: 'https://instagram.com/chloedubois_growth' },
-    status: 'contacted',
-    websiteStatus: 'alive',
-    responseTimeMs: 110,
-    lastActivityDate: '2026-07-18T09:20:00Z',
-    daysAgo: 30,
-    sentCampaigns: ['Agency Pitch Sequence'],
-    customNotes: 'Dormant lead (30+ days inactive). Ready for Breakup / Permission to close sequence.',
-    tags: ['AI Cold Outreach'],
-    openCount: 0,
-    isReplied: false,
-    isTrash: false,
+// Clean Data Versioning to wipe legacy dummy mock records
+const DATA_CLEAN_VERSION = 'visualsky_v3_empty_clean';
+if (typeof window !== 'undefined') {
+  try {
+    const currentVersion = localStorage.getItem('visualsky_data_clean_version');
+    if (currentVersion !== DATA_CLEAN_VERSION) {
+      localStorage.removeItem('visualsky_leads');
+      localStorage.removeItem('visualsky_threads');
+      localStorage.removeItem('visualsky_campaigns');
+      localStorage.removeItem('visualsky_templates');
+      localStorage.removeItem('visualsky_smtp');
+      localStorage.removeItem('visualsky_sent_emails');
+      localStorage.removeItem('visualsky_notifs');
+      localStorage.removeItem('visualsky_tags');
+      localStorage.removeItem('visualsky_mined_leads');
+      localStorage.removeItem('visualsky_users');
+      localStorage.removeItem('visualsky_current_user');
+      localStorage.setItem('visualsky_data_clean_version', DATA_CLEAN_VERSION);
+    }
+  } catch (e) {
+    console.error('Storage version migration error:', e);
   }
-];
+}
+
+// Initial Lead Tags (Clean empty initial list)
+const INITIAL_TAGS: LeadTag[] = [];
+
+// Initial Verified Leads (Clean empty initial list)
+const INITIAL_LEADS: Lead[] = [];
 
 // Initial Email Templates & Categories
 export const INITIAL_TEMPLATE_CATEGORIES: TemplateCategory[] = [
@@ -391,395 +265,34 @@ export const INITIAL_TEMPLATE_CATEGORIES: TemplateCategory[] = [
   { id: 'agency_pitch', name: 'agency_pitch', label: 'Agency White-Label', color: 'emerald' },
 ];
 
-export const INITIAL_TEMPLATES: EmailTemplate[] = [
-  {
-    id: 'tmpl-1',
-    title: 'High-Conversion SaaS Value Pitch',
-    category: 'cold_outreach',
-    subject: 'Scaling cold outreach pipeline for {{company}}',
-    body: `Hi {{name}},
+export const INITIAL_TEMPLATES: EmailTemplate[] = [];
 
-Loved {{company}}'s recent product roadmap and expansion milestones!
+// Initial Threads (Clean empty initial list)
+const INITIAL_THREADS: EmailThread[] = [];
 
-Quick question: are you currently managing outbound lead generation across dedicated domains, or relying mostly on inbound?
+// Initial SMTP Relays (Clean empty initial list)
+const INITIAL_SMTP: SMTPAccount[] = [];
 
-We built a high-deliverability cold outreach platform that guarantees 99.8% primary inbox landing with automated 7-day and 14-day follow-up sequences.
+// Initial Sent Email Logs (Clean empty initial list)
+const INITIAL_SENT_LOGS: SentEmailLog[] = [];
 
-Would you be open to a 2-minute overview this Thursday?
-
-Best regards,`,
-    tags: ['SaaS', 'High Reply', 'Cold Pitch'],
-    usageCount: 384,
-    replyRatePercent: 38.4,
-    createdAt: '2026-08-01'
-  },
-  {
-    id: 'tmpl-2',
-    title: '7-Day Quick Follow-up (Friendly Ping)',
-    category: 'followup_7d',
-    subject: 'Quick follow-up on {{company}} outreach',
-    body: `Hi {{name}},
-
-Following up on my note from last week. I know you're super busy managing operations at {{company}}.
-
-Just wanted to share a quick case study showing how a similar team scaled their positive reply rate by 3.2x while keeping spam rates under 0.1%.
-
-Worth a 60-second glance?
-
-Cheers,`,
-    tags: ['7-Day', 'Follow-up', 'Case Study'],
-    usageCount: 290,
-    replyRatePercent: 42.1,
-    createdAt: '2026-08-05'
-  },
-  {
-    id: 'tmpl-3',
-    title: '14-Day Value Drop & Metric Audit',
-    category: 'followup_14d',
-    subject: 'Idea for {{company}} outbound deliverability',
-    body: `Hi {{name}},
-
-I checked out {{website}} and noticed your outbound domain configuration could benefit from automated MX/SPF/DKIM handshake rotations.
-
-We put together a short deliverability report for {{company}} showing where you might be losing 15-20% of pipeline replies to the spam folder.
-
-Happy to send over the PDF if you're interested?
-
-Best,`,
-    tags: ['14-Day', 'Value Add', 'Audit'],
-    usageCount: 175,
-    replyRatePercent: 31.8,
-    createdAt: '2026-08-08'
-  },
-  {
-    id: 'tmpl-4',
-    title: '30-Day Breakup Email (Permission to Close)',
-    category: 'breakup_30d',
-    subject: 'Closing the loop on {{company}} outreach',
-    body: `Hi {{name}},
-
-I haven't heard back, so I assume cold outreach optimization isn't a priority for {{company}} right now.
-
-I won't follow up again so I don't clutter your inbox. If you ever need to scale outbound without risking your primary domain reputation, feel free to reach back out anytime.
-
-Wishing you and {{company}} continued success!
-
-Best regards,`,
-    tags: ['30-Day', 'Breakup', 'Psychology'],
-    usageCount: 210,
-    replyRatePercent: 29.5,
-    createdAt: '2026-08-10'
-  }
-];
-
-// Initial Threads
-const INITIAL_THREADS: EmailThread[] = [
-  {
-    id: 'thread-1',
-    leadId: 'lead-1',
-    leadName: 'Sarah Jenkins',
-    leadCompany: 'Linear Systems',
-    leadEmail: 'sarah.jenkins@linear.app',
-    leadAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-    subject: 'Scaling cold outreach pipeline for Linear Systems',
-    lastMessage: "Hi, thanks for reaching out! We're actually evaluating our outbound stack this month. Could you share a quick deck or 3-minute video showing the deliverability rates?",
-    lastMessageDate: '10:45 AM',
-    unreadCount: 1,
-    labels: ['Hot Lead', 'Meeting Scheduled'],
-    isStarred: true,
-    isTrash: false,
-    messages: [
-      {
-        id: 'm1',
-        threadId: 'thread-1',
-        sender: 'user',
-        senderName: 'Outreach Manager',
-        senderEmail: 'outreach@visualskymedia.com',
-        recipientName: 'Sarah Jenkins',
-        recipientEmail: 'sarah.jenkins@linear.app',
-        timestamp: 'Aug 15, 2026, 09:12 AM',
-        subject: 'Scaling cold outreach pipeline for Linear Systems',
-        body: `Hi Sarah,
-
-Loved Linear's recent roadmap planning feature release last Tuesday!
-
-I noticed your team has been expanding developer acquisition. Quick question: are you currently managing cold outreach across multiple dedicated domains, or relying mostly on inbound?
-
-We built an automated deliverability engine that guarantees 99.8% primary inbox landing with automated follow-ups.
-
-Would you be open to a 2-minute overview this Thursday?`,
-        isRead: true,
-        status: 'opened',
-      },
-      {
-        id: 'm2',
-        threadId: 'thread-1',
-        sender: 'lead',
-        senderName: 'Sarah Jenkins',
-        senderEmail: 'sarah.jenkins@linear.app',
-        recipientName: 'Outreach Manager',
-        recipientEmail: 'outreach@visualskymedia.com',
-        timestamp: 'Aug 16, 2026, 10:45 AM',
-        subject: 'Re: Scaling cold outreach pipeline for Linear Systems',
-        body: `Hi,
-
-Thanks for reaching out! We're actually evaluating our outbound stack this month. Could you share a quick deck or 3-minute video showing the deliverability rates?
-
-Also, how quickly can we connect 5 Google Workspace domains?
-
-Best regards,
-Sarah Jenkins
-VP of Growth, Linear Systems`,
-        isRead: false,
-        status: 'replied',
-      }
-    ]
-  },
-  {
-    id: 'thread-2',
-    leadId: 'lead-3',
-    leadName: 'Elena Rostova',
-    leadCompany: 'Supabase Data Labs',
-    leadEmail: 'elena.rostova@supabase.com',
-    leadAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    subject: 'Enterprise deliverability audit for Supabase Data Labs',
-    lastMessage: 'Do you support custom SMTP rotation with Google Workspace & Amazon SES simultaneously?',
-    lastMessageDate: '08:45 AM',
-    unreadCount: 1,
-    labels: ['Hot Lead', 'Technical Question'],
-    isStarred: true,
-    isTrash: false,
-    messages: [
-      {
-        id: 'm3',
-        threadId: 'thread-2',
-        sender: 'user',
-        senderName: 'Outreach Manager',
-        senderEmail: 'outreach@visualskymedia.com',
-        recipientName: 'Elena Rostova',
-        recipientEmail: 'elena.rostova@supabase.com',
-        timestamp: 'Aug 16, 2026, 08:30 AM',
-        subject: 'Enterprise deliverability audit for Supabase Data Labs',
-        body: `Hi Elena,
-
-Huge fan of Supabase's Postgres vector embeddings architecture!
-
-I noticed your outbound infrastructure could benefit from automated MX/SPF/DKIM handshake rotations to prevent spam landing.
-
-Happy to share a 2-minute breakdown if you're interested?`,
-        isRead: true,
-        status: 'opened',
-      },
-      {
-        id: 'm4',
-        threadId: 'thread-2',
-        sender: 'lead',
-        senderName: 'Elena Rostova',
-        senderEmail: 'elena.rostova@supabase.com',
-        recipientName: 'Outreach Manager',
-        recipientEmail: 'outreach@visualskymedia.com',
-        timestamp: 'Aug 17, 2026, 08:45 AM',
-        subject: 'Re: Enterprise deliverability audit for Supabase Data Labs',
-        body: `Hi,
-
-Do you support custom SMTP rotation with Google Workspace & Amazon SES simultaneously? We send around 25k emails per month.
-
-Best,
-Elena`,
-        isRead: false,
-        status: 'replied',
-      }
-    ]
-  }
-];
-
-// Initial SMTP Relays with Webmail Address
-const INITIAL_SMTP: SMTPAccount[] = [
-  {
-    id: 'smtp-1',
-    name: 'Google Workspace Primary Relay',
-    provider: 'gmail',
-    host: 'smtp.gmail.com',
-    port: 587,
-    encryption: 'STARTTLS',
-    username: 'outreach@visualskymedia.com',
-    fromName: 'Visual Sky Outreach',
-    domainWebmailUrl: 'https://mail.google.com/a/visualskymedia.com',
-    dailyLimit: 400,
-    sentToday: 132,
-    warmupStatus: 'active',
-    healthScore: 99,
-    isConnected: true,
-    isTrash: false,
-    scheduleSettings: {
-      sendMode: 'instant',
-      intervalSeconds: 15,
-      jitterRandom: true,
-      scheduleStartTime: '09:00',
-      scheduleEndTime: '18:00',
-      timezone: 'America/New_York',
-      activeDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
-    }
-  },
-  {
-    id: 'smtp-2',
-    name: 'Custom Domain Webmail (cPanel / Hostinger)',
-    provider: 'domain_webmail',
-    host: 'mail.visualskymedia.com',
-    port: 465,
-    encryption: 'SSL',
-    username: 'growth@visualskymedia.com',
-    fromName: 'Visual Sky Growth Team',
-    domainWebmailUrl: 'https://webmail.visualskymedia.com',
-    dailyLimit: 600,
-    sentToday: 215,
-    warmupStatus: 'active',
-    healthScore: 98,
-    isConnected: true,
-    isTrash: false,
-    scheduleSettings: {
-      sendMode: 'instant',
-      intervalSeconds: 20,
-      jitterRandom: true,
-      scheduleStartTime: '09:00',
-      scheduleEndTime: '18:00',
-      timezone: 'America/New_York',
-      activeDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
-    }
-  },
-  {
-    id: 'smtp-3',
-    name: 'Amazon SES Dedicated Pool',
-    provider: 'ses',
-    host: 'email-smtp.us-east-1.amazonaws.com',
-    port: 587,
-    encryption: 'STARTTLS',
-    username: 'AKIAIOSFODNN7EXAMPLE',
-    fromName: 'Visual Sky Scaled Engine',
-    domainWebmailUrl: 'https://console.aws.amazon.com/ses',
-    dailyLimit: 2500,
-    sentToday: 640,
-    warmupStatus: 'active',
-    healthScore: 100,
-    isConnected: true,
-    isTrash: false,
-    scheduleSettings: {
-      sendMode: 'instant',
-      intervalSeconds: 10,
-      jitterRandom: true,
-      scheduleStartTime: '08:00',
-      scheduleEndTime: '20:00',
-      timezone: 'America/New_York',
-      activeDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-    }
-  }
-];
-
-// Initial Sent Email Logs
-const INITIAL_SENT_LOGS: SentEmailLog[] = [
-  {
-    id: 'sent-1',
-    campaignName: 'SaaS Scale Outreach Q3',
-    recipientName: 'Sarah Jenkins',
-    recipientEmail: 'sarah.jenkins@linear.app',
-    recipientCompany: 'Linear Systems',
-    subject: 'Scaling cold outreach pipeline for Linear Systems',
-    body: 'Hi Sarah,\n\nLoved Linear’s latest roadmap planning feature release...',
-    smtpAccountName: 'Google Workspace Primary Relay',
-    smtpHost: 'smtp.gmail.com:587',
-    sentAt: '2026-08-15T09:12:00Z',
-    status: 'replied',
-    openCount: 4,
-    firstOpenedAt: '2026-08-15T09:34:00Z',
-    repliedAt: '2026-08-16T10:45:00Z',
-    ipAddress: '157.240.241.35',
-    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-    trackingPixelId: 'px-linear-sarah-882'
-  },
-  {
-    id: 'sent-2',
-    campaignName: 'Enterprise Deliverability Q3',
-    recipientName: 'Elena Rostova',
-    recipientEmail: 'elena.rostova@supabase.com',
-    recipientCompany: 'Supabase Data Labs',
-    subject: 'Enterprise deliverability audit for Supabase Data Labs',
-    body: 'Hi Elena,\n\nHuge fan of Supabase’s Postgres vector embeddings architecture...',
-    smtpAccountName: 'Custom Domain Webmail',
-    smtpHost: 'mail.visualskymedia.com:465',
-    sentAt: '2026-08-16T08:30:00Z',
-    status: 'replied',
-    openCount: 5,
-    firstOpenedAt: '2026-08-16T08:38:00Z',
-    repliedAt: '2026-08-17T08:45:00Z',
-    ipAddress: '104.28.19.44',
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
-    trackingPixelId: 'px-supabase-elena-991'
-  },
-  {
-    id: 'sent-3',
-    campaignName: 'SaaS Scale Outreach Q3',
-    recipientName: 'Marcus Vance',
-    recipientEmail: 'marcus.v@retool.com',
-    recipientCompany: 'Retool Cloud',
-    subject: 'Scaling cold outreach pipeline for Retool Cloud',
-    body: 'Hi Marcus,\n\nImpressed by Retool’s recent AI workflows integration update...',
-    smtpAccountName: 'Google Workspace Primary Relay',
-    smtpHost: 'smtp.gmail.com:587',
-    sentAt: '2026-08-10T14:00:00Z',
-    status: 'opened',
-    openCount: 3,
-    firstOpenedAt: '2026-08-10T14:15:00Z',
-    ipAddress: '64.233.160.1',
-    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
-    trackingPixelId: 'px-retool-marcus-412'
-  }
-];
-
-// Initial Users
+// Initial Users (Clean Master Admin account)
 const INITIAL_USERS: UserAccount[] = [
   {
     id: 'user-agency-1',
-    name: 'Agency Master Admin',
-    email: 'admin@visualsky.io',
+    name: 'Rafiqul VisualSky',
+    email: 'rafiqulvisualsky@gmail.com',
     avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     role: 'agency',
     isOwner: true,
     plan: 'Enterprise',
     bdtPlanLabel: 'Agency Master Admin (Free Unlimited)',
-    quotaUsed: 987,
+    quotaUsed: 0,
     quotaLimit: 50000,
-    aiCredits: 12450,
-    company: 'VisualSky Agency Platform',
+    aiCredits: 10000,
+    company: 'Visual Sky',
     title: 'Agency Principal & Master Admin',
-    phone: '+880 1712-345678',
-    joinedAt: '2026-01-01'
-  },
-  {
-    id: 'user-client-1',
-    name: 'Alex Vance (Client)',
-    email: 'client@growthagency.com',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    role: 'client',
-    isOwner: false,
-    plan: 'Pro',
-    bdtPlanLabel: 'Scale Business (৳৪,৯৯৯/mo)',
-    quotaUsed: 315,
-    quotaLimit: 5000,
-    aiCredits: 2500,
-    company: 'Scale Growth Client Account',
-    title: 'Client Partner',
-    phone: '+880 1812-345678',
-    paymentInfo: {
-      method: 'bKash',
-      planName: 'Scale Business (৳৪,৯৯৯/mo)',
-      amountBDT: 4999,
-      trxId: 'BKA98X21MN',
-      senderPhone: '+880 1812-345678',
-      paymentDate: '2026-08-01',
-      status: 'verified',
-      ownerPayoutAccount: '01712-345678 (bKash Merchant)'
-    },
-    joinedAt: '2026-06-15'
+    joinedAt: '2026-08-29'
   }
 ];
 
@@ -1046,41 +559,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const saved = localStorage.getItem('visualsky_campaigns');
       if (saved) return JSON.parse(saved);
-      return [
-        {
-          id: 'camp-1',
-          name: 'SaaS Scale Outreach Q3',
-          niche: 'B2B SaaS Founders',
-          status: 'running',
-          totalLeads: 48,
-          sentCount: 32,
-          openCount: 22,
-          replyCount: 8,
-          bounceCount: 0,
-          leadIds: ['lead-1', 'lead-2', 'lead-4'],
-          steps: [
-            {
-              stepNumber: 1,
-              delayDays: 0,
-              subject: 'Scaling cold outreach pipeline for {{company}}',
-              body: 'Hi {{name}},\n\nLoved {{company}}\'s recent expansion! Quick question...',
-              triggerCondition: 'all'
-            },
-            {
-              stepNumber: 2,
-              delayDays: 7,
-              subject: 'Quick follow-up on {{company}} deliverability',
-              body: 'Hi {{name}},\n\nFollowing up on my note from last week...',
-              triggerCondition: 'no_reply_7d'
-            }
-          ],
-          sendMode: 'instant',
-          sendingIntervalSec: 15,
-          assignedSmtpId: 'smtp-1',
-          createdAt: '2026-08-01',
-          lastRunAt: '2026-08-16'
-        }
-      ];
+      return [];
     } catch {
       return [];
     }
@@ -1129,27 +608,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [notifications, setNotifications] = useState<AppNotification[]>(() => {
     try {
       const saved = localStorage.getItem('visualsky_notifs');
-      return saved ? JSON.parse(saved) : [
-        {
-          id: 'n-1',
-          title: '🔥 New Positive Reply from Sarah Jenkins',
-          message: 'Linear Systems requested deliverability deck and 3-minute video overview.',
-          type: 'reply',
-          timestamp: '10:45 AM',
-          isRead: false,
-          linkTab: 'inbox',
-          threadId: 'thread-1'
-        },
-        {
-          id: 'n-2',
-          title: '👁️ High Open Engagement Alert',
-          message: 'Elena Rostova (Supabase) opened your enterprise cold email 5 times.',
-          type: 'open',
-          timestamp: '08:40 AM',
-          isRead: false,
-          linkTab: 'sent'
-        }
-      ];
+      return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
     }
