@@ -20,6 +20,7 @@ import { AuthModal } from './components/auth/AuthModal';
 import { LogoutConfirmModal } from './components/auth/LogoutConfirmModal';
 import { ProfileModal } from './components/profile/ProfileModal';
 import { SendMailModal } from './components/mail/SendMailModal';
+import { SMTPConnectModal } from './components/smtp/SMTPConnectModal';
 import { FloatingNotificationCorner } from './components/notifications/FloatingNotificationCorner';
 import { Lead } from './types';
 import { 
@@ -48,7 +49,11 @@ const MainContent: React.FC = () => {
     currentUser, 
     isLogoutConfirmOpen, 
     setIsLogoutConfirmOpen, 
-    logout 
+    logout,
+    isSMTPConnectModalOpen,
+    smtpModalEditingAccount,
+    smtpModalInitialProvider,
+    closeSMTPConnectModal
   } = useApp();
   
   const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
@@ -375,6 +380,14 @@ const MainContent: React.FC = () => {
           setSelectedLeadForMail(undefined);
         }} 
         initialLead={selectedLeadForMail}
+      />
+
+      {/* Global Persistent SMTP Connect & Relay Modal */}
+      <SMTPConnectModal
+        isOpen={isSMTPConnectModalOpen}
+        onClose={closeSMTPConnectModal}
+        editingAccount={smtpModalEditingAccount}
+        initialProvider={smtpModalInitialProvider}
       />
     </div>
   );

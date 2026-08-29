@@ -150,6 +150,11 @@ interface AppContextType {
   restoreSMTPAccount: (id: string) => void;
   permanentDeleteSMTPAccount: (id: string) => void;
   testSMTPConnection: (id: string) => Promise<boolean>;
+  isSMTPConnectModalOpen: boolean;
+  smtpModalEditingAccount: SMTPAccount | null;
+  smtpModalInitialProvider: SMTPAccount['provider'];
+  openSMTPConnectModal: (editingAccount?: SMTPAccount | null, initialProvider?: SMTPAccount['provider']) => void;
+  closeSMTPConnectModal: () => void;
 
   // Sent Emails & Live Outbox Tracking
   sentEmails: SentEmailLog[];
@@ -642,6 +647,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return INITIAL_SMTP;
     }
   });
+
+  // Global SMTP Connect Modal State
+  const [isSMTPConnectModalOpen, setIsSMTPConnectModalOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('visualsky_smtp_modal_open') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [smtpModalEditingAccount, setSmtpModalEditingAccount] = useState<SMTPAccount | null>(null);
+  const [smtpModalInitialProvider, setSmtpModalInitialProvider] = useState<SMTPAccount['provider']>('domain_webmail');
 
   // Sent Emails
   const [sentEmails, setSentEmails] = useState<SentEmailLog[]>(() => {
@@ -1376,6 +1392,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const openSMTPConnectModal = (editingAccount?: SMTPAccount | null, initialProvider?: SMTPAccount['provider']) => {
+    setSmtpModalEditingAccount(editingAccount || null);
+    if (initialProvider) {
+      setSmtpModalInitialProvider(initialProvider);
+    }
+    setIsSMTPConnectModalOpen(true);
+    try {
+      localStorage.setItem('visualsky_smtp_modal_open', 'true');
+    } catch {}
+  };
+
+  const closeSMTPConnectModal = () => {
+    setIsSMTPConnectModalOpen(false);
+    setSmtpModalEditingAccount(null);
+    try {
+      localStorage.removeItem('visualsky_smtp_modal_open');
+    } catch {}
+  };
+
   // Outbound Sent Emails & Live Tracking
   const addSentEmailLog = (logData: Omit<SentEmailLog, 'id' | 'sentAt' | 'trackingPixelId'>): SentEmailLog => {
     const newLog: SentEmailLog = {
@@ -1864,6 +1899,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         restoreSMTPAccount,
         permanentDeleteSMTPAccount,
         testSMTPConnection,
+        isSMTPConnectModalOpen,
+        smtpModalEditingAccount,
+        smtpModalInitialProvider,
+        openSMTPConnectModal,
+        closeSMTPConnectModal,
         sentEmails,
         addSentEmailLog,
         clearSentEmails,
