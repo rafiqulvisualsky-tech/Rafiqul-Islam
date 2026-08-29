@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/layout/Navbar';
 import { Sidebar } from './components/layout/Sidebar';
+import { MobileNavDrawer } from './components/layout/MobileNavDrawer';
 import { MainDashboard } from './components/dashboard/MainDashboard';
 import { LeadDirectory } from './components/leads/LeadDirectory';
 import { AILeadGenerator } from './components/leads/AILeadGenerator';
@@ -15,6 +16,8 @@ import { GeminiAssistant } from './components/ai/GeminiAssistant';
 import { OwnerPanel } from './components/owner/OwnerPanel';
 import { TrashManager } from './components/trash/TrashManager';
 import { AuthModal } from './components/auth/AuthModal';
+import { LogoutConfirmModal } from './components/auth/LogoutConfirmModal';
+import { ProfileModal } from './components/profile/ProfileModal';
 import { SendMailModal } from './components/mail/SendMailModal';
 import { FloatingNotificationCorner } from './components/notifications/FloatingNotificationCorner';
 import { Lead } from './types';
@@ -30,12 +33,25 @@ import {
   Bot, 
   ShieldCheck, 
   Trash2,
-  MailCheck
+  MailCheck,
+  Grid,
+  Menu
 } from 'lucide-react';
 
 const MainContent: React.FC = () => {
-  const { activeTab, setActiveTab, threads, currentUser } = useApp();
+  const { 
+    activeTab, 
+    setActiveTab, 
+    threads, 
+    currentUser, 
+    isLogoutConfirmOpen, 
+    setIsLogoutConfirmOpen, 
+    logout 
+  } = useApp();
+  
   const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
+  const [isProfileOpen, setIsProfileOpen] = useState<boolean>(false);
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState<boolean>(false);
   const [isSendMailOpen, setIsSendMailOpen] = useState<boolean>(false);
   const [selectedLeadForMail, setSelectedLeadForMail] = useState<Lead | undefined>(undefined);
 
@@ -157,6 +173,7 @@ const MainContent: React.FC = () => {
       <Navbar 
         onOpenAuth={() => setIsAuthOpen(true)} 
         onOpenSendMail={() => handleOpenSendMail()} 
+        onOpenMobileMenu={() => setIsMobileDrawerOpen(true)}
       />
 
       {/* Body Layout: Sidebar + Main Content View */}
@@ -207,11 +224,11 @@ const MainContent: React.FC = () => {
       <FloatingNotificationCorner />
 
       {/* Mobile Responsive Bottom Navigation Bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#090d16]/95 backdrop-blur-lg border-t border-slate-800 flex items-center justify-around px-2 py-2">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#090d16]/98 backdrop-blur-xl border-t border-slate-800/90 flex items-center justify-around px-1.5 py-1.5 shadow-2xl">
         <button
           onClick={() => setActiveTab('dashboard')}
-          className={`flex flex-col items-center gap-1 text-[10px] font-bold p-1 rounded-lg transition ${
-            activeTab === 'dashboard' ? 'text-blue-400' : 'text-slate-400'
+          className={`flex flex-col items-center gap-1 text-[10px] font-bold py-1.5 px-2 rounded-xl transition cursor-pointer ${
+            activeTab === 'dashboard' ? 'text-cyan-400 bg-cyan-500/10' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
           <LayoutDashboard className="w-4 h-4" />
@@ -220,8 +237,8 @@ const MainContent: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('leads')}
-          className={`flex flex-col items-center gap-1 text-[10px] font-bold p-1 rounded-lg transition ${
-            activeTab === 'leads' ? 'text-cyan-400' : 'text-slate-400'
+          className={`flex flex-col items-center gap-1 text-[10px] font-bold py-1.5 px-2 rounded-xl transition cursor-pointer ${
+            activeTab === 'leads' ? 'text-cyan-400 bg-cyan-500/10' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
           <Users className="w-4 h-4" />
@@ -230,8 +247,8 @@ const MainContent: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('generator')}
-          className={`flex flex-col items-center gap-1 text-[10px] font-bold p-1 rounded-lg transition ${
-            activeTab === 'generator' ? 'text-purple-400' : 'text-slate-400'
+          className={`flex flex-col items-center gap-1 text-[10px] font-bold py-1.5 px-2 rounded-xl transition cursor-pointer ${
+            activeTab === 'generator' ? 'text-purple-400 bg-purple-500/10' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
           <Sparkles className="w-4 h-4" />
@@ -240,37 +257,67 @@ const MainContent: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('inbox')}
-          className={`flex flex-col items-center gap-1 text-[10px] font-bold p-1 rounded-lg transition relative ${
-            activeTab === 'inbox' ? 'text-rose-400' : 'text-slate-400'
+          className={`flex flex-col items-center gap-1 text-[10px] font-bold py-1.5 px-2 rounded-xl transition relative cursor-pointer ${
+            activeTab === 'inbox' ? 'text-rose-400 bg-rose-500/10' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
           <Inbox className="w-4 h-4" />
           <span>Inbox</span>
           {unreadCount > 0 && (
-            <span className="absolute top-0 right-1 w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+            <span className="absolute top-1 right-2 w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
           )}
         </button>
 
         <button
           onClick={() => setActiveTab('campaigns')}
-          className={`flex flex-col items-center gap-1 text-[10px] font-bold p-1 rounded-lg transition ${
-            activeTab === 'campaigns' ? 'text-emerald-400' : 'text-slate-400'
+          className={`flex flex-col items-center gap-1 text-[10px] font-bold py-1.5 px-2 rounded-xl transition cursor-pointer ${
+            activeTab === 'campaigns' ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
           <Send className="w-4 h-4" />
           <span>Campaigns</span>
         </button>
 
+        {/* Full Menu / Drawer Toggle */}
         <button
-          onClick={() => setActiveTab('owner')}
-          className={`flex flex-col items-center gap-1 text-[10px] font-bold p-1 rounded-lg transition ${
-            activeTab === 'owner' ? 'text-indigo-400' : 'text-slate-400'
+          onClick={() => setIsMobileDrawerOpen(true)}
+          className={`flex flex-col items-center gap-1 text-[10px] font-bold py-1.5 px-2 rounded-xl transition cursor-pointer ${
+            isMobileDrawerOpen ? 'text-cyan-300 bg-cyan-500/20' : 'text-slate-300 hover:text-white bg-slate-900/80 border border-slate-800'
           }`}
+          title="Open all sidebar options and settings"
         >
-          <ShieldCheck className="w-4 h-4" />
-          <span>Owner</span>
+          <Grid className="w-4 h-4 text-cyan-400" />
+          <span>All Modules</span>
         </button>
       </nav>
+
+      {/* Mobile Slide-over Full Drawer containing ALL sidebar items */}
+      <MobileNavDrawer 
+        isOpen={isMobileDrawerOpen} 
+        onClose={() => setIsMobileDrawerOpen(false)}
+        onOpenSendMail={() => handleOpenSendMail()}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        onRequestLogout={() => setIsLogoutConfirmOpen(true)}
+        onOpenProfile={() => setIsProfileOpen(true)}
+      />
+
+      {/* Logout Confirmation Permission Modal */}
+      <LogoutConfirmModal
+        isOpen={isLogoutConfirmOpen}
+        onClose={() => setIsLogoutConfirmOpen(false)}
+        onConfirm={() => {
+          logout();
+          setIsAuthOpen(true);
+        }}
+        currentUser={currentUser}
+      />
+
+      {/* Profile Modal */}
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        onOpenAuth={() => setIsAuthOpen(true)}
+      />
 
       {/* Auth Modal (Dual Client/Owner Portal with Eye visibility toggles & password confirmation) */}
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />

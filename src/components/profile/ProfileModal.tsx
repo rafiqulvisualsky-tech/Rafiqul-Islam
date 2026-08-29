@@ -42,6 +42,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
     updateUserProfile, 
     changeUserPassword, 
     logout, 
+    requestLogout,
     addNotification 
   } = useApp();
 
@@ -122,9 +123,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
   };
 
   const handleLogout = () => {
-    logout();
     onClose();
-    onOpenAuth();
+    requestLogout();
   };
 
   const initials = name

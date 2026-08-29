@@ -181,6 +181,9 @@ interface AppContextType {
   deleteUserAccount: (userId: string) => void;
   resetUserPasswordByEmail: (email: string, newPass: string) => boolean;
   logout: () => void;
+  isLogoutConfirmOpen: boolean;
+  setIsLogoutConfirmOpen: (open: boolean) => void;
+  requestLogout: () => void;
 
   // AI Mined Cache
   minedLeads: Lead[];
@@ -1555,12 +1558,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState<boolean>(false);
+
+  const requestLogout = () => {
+    setIsLogoutConfirmOpen(true);
+  };
+
   const logout = () => {
     signOutSupabase().catch(() => {});
-    // Default to client account on logout
-    const clientAcc = allUsers.find(u => u.role === 'client' || u.role === 'customer') || allUsers[1] || allUsers[0];
+    try {
+      localStorage.removeItem('visualsky_current_user');
+      localStorage.removeItem('sb-wtylyugyemwndjcvskgq-auth-token');
+    } catch {}
+    
+    // Find or create signed out user
+    const clientAcc = allUsers.find(u => (u.role === 'client' || u.role === 'customer') && !u.isOwner) || {
+      id: `usr-guest-${Date.now()}`,
+      name: 'Signed Out Client',
+      email: '',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+      role: 'client' as const,
+      isOwner: false,
+      plan: 'Free' as const,
+      bdtPlanLabel: 'Guest / Signed Out',
+      quotaUsed: 0,
+      quotaLimit: 500,
+      aiCredits: 0,
+      company: 'VisualSky Workspace',
+      title: 'Outreach Representative',
+      joinedAt: '2026-08-29'
+    };
     setCurrentUser(clientAcc);
     setActiveTabState('dashboard');
+    setIsLogoutConfirmOpen(false);
+    
+    addNotification({
+      title: 'লগআউট সম্পন্ন হয়েছে (Logged Out) 🚪',
+      message: 'আপনার বর্তমান সেশনটি নিরাপদভাবে লগআউট করা হয়েছে। পুনরায় প্রবেশ করতে সাইন ইন করুন।',
+      type: 'system'
+    });
   };
 
   const getDormantLeads = (days: number) => {
@@ -1826,6 +1862,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteUserAccount,
         resetUserPasswordByEmail,
         logout,
+        isLogoutConfirmOpen,
+        setIsLogoutConfirmOpen,
+        requestLogout,
         minedLeads,
         setMinedLeads,
         emptyAllTrash,

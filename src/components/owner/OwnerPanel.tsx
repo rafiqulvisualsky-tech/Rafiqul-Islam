@@ -150,6 +150,17 @@ export const OwnerPanel: React.FC = () => {
     e.preventDefault();
     if (!newCustomer.name || !newCustomer.email) return;
 
+    const normalizedEmail = newCustomer.email.trim().toLowerCase();
+    const existing = allUsers.find(u => u.email.toLowerCase() === normalizedEmail);
+    if (existing) {
+      addNotification({
+        title: 'Duplicate Email Notice ⚠️',
+        message: `An account with email "${newCustomer.email.trim()}" already exists. Cannot register duplicate email.`,
+        type: 'system'
+      });
+      return;
+    }
+
     const created: UserAccount = {
       id: `usr-cust-${Date.now()}`,
       name: newCustomer.name,

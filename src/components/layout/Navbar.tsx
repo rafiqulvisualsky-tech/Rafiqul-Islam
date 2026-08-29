@@ -26,6 +26,7 @@ import {
   Server,
   FileText,
   Users,
+  Menu,
   X
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -33,9 +34,10 @@ import confetti from 'canvas-confetti';
 interface NavbarProps {
   onOpenAuth: () => void;
   onOpenSendMail?: () => void;
+  onOpenMobileMenu?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth, onOpenSendMail }) => {
+export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth, onOpenSendMail, onOpenMobileMenu }) => {
   const { 
     activeTab, 
     setActiveTab, 
@@ -49,6 +51,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth, onOpenSendMail }) =>
     setSoundEnabled, 
     currentUser, 
     logout,
+    requestLogout,
     searchQuery, 
     setSearchQuery, 
     openFollowUpCohortModal,
@@ -174,12 +177,24 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth, onOpenSendMail }) =>
 
   return (
     <header className="sticky top-0 z-40 h-16 bg-[#090d16]/95 backdrop-blur-md border-b border-slate-800/80 px-3 sm:px-6 flex items-center justify-between gap-3 select-none">
-      {/* Brand / Logo (Single line, Visual Sky branding) */}
-      <div 
-        onClick={() => setActiveTab('dashboard')} 
-        className="cursor-pointer hover:opacity-90 transition shrink-0"
-      >
-        <VisualSkyLogo size="md" />
+      {/* Brand / Logo + Mobile Menu Toggle */}
+      <div className="flex items-center gap-2 shrink-0">
+        <button
+          type="button"
+          onClick={onOpenMobileMenu}
+          className="md:hidden p-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 flex items-center justify-center cursor-pointer transition"
+          aria-label="Open navigation menu"
+          title="Open all modules menu"
+        >
+          <Menu className="w-4 h-4 text-cyan-400" />
+        </button>
+
+        <div 
+          onClick={() => setActiveTab('dashboard')} 
+          className="cursor-pointer hover:opacity-90 transition shrink-0"
+        >
+          <VisualSkyLogo size="md" />
+        </div>
       </div>
 
       {/* Center Search Input with Instant Popover Results */}
@@ -736,8 +751,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth, onOpenSendMail }) =>
                 <button
                   onClick={() => {
                     setShowProfileMenu(false);
-                    logout();
-                    onOpenAuth();
+                    requestLogout();
                   }}
                   className="w-full text-left px-3 py-2 rounded-xl text-xs text-rose-400 hover:bg-rose-950/40 flex items-center gap-2 font-bold cursor-pointer transition"
                 >

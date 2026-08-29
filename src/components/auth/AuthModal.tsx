@@ -276,6 +276,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(true);
     setErrorMessage('');
 
+    const targetEmail = (email || (portalType === 'agency' ? 'admin@visualsky.io' : 'rafiqulvisualsky@gmail.com')).trim().toLowerCase();
+    
+    // Strict Duplicate Registration Prevention for Google Sign Up
+    if (authMode === 'signup') {
+      const isDuplicate = allUsers.some(u => u.email.toLowerCase() === targetEmail);
+      if (isDuplicate) {
+        setIsLoading(false);
+        setErrorMessage(`⚠️ এই ইমেইল (${targetEmail}) দিয়ে ইতিপূর্বেই একটি অ্যাকাউন্ট খোলা আছে। একই ইমেইল দিয়ে ২ বার সাইন আপ করা সম্ভব নয়। অনুগ্রহ করে "Sign In" বা "Forgot Password" ব্যবহার করুন।`);
+        return;
+      }
+    }
+
     // If attempting agency registration, check 3-seat limit
     if (authMode === 'signup' && portalType === 'agency' && isAgencyMaxedOut) {
       setIsLoading(false);
@@ -445,7 +457,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  // Validate Step 2A (Required Signup Fields)
+  // Validate Step 2A (Required Signup Fields) & Strict Duplicate Email Check
   const validateSignupCredentials = (): boolean => {
     if (!fullName.trim()) {
       setErrorMessage('Full Name is required.');
@@ -456,6 +468,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setErrorMessage('Please provide a valid email address.');
       return false;
     }
+
+    // Strict Uniqueness: Check if email is already registered in the platform
+    const normalizedEmail = email.trim().toLowerCase();
+    const existingAccount = allUsers.find(u => u.email.toLowerCase() === normalizedEmail);
+    if (existingAccount) {
+      setErrorMessage(`⚠️ এই ইমেইল (${email.trim()}) দিয়ে ইতিপূর্বেই একটি ${existingAccount.role === 'agency' ? 'Agency Master' : 'Client'} অ্যাকাউন্ট নিবন্ধিত আছে! একই ইমেইল দিয়ে ২ বার সাইন আপ করা যাবে না। অনুগ্রহ করে "Sign In" করুন অথবা "Forgot Password" দিয়ে পাসওয়ার্ড রিসেট করুন।`);
+      return false;
+    }
+
     const cleanPhone = phone.replace(/[\s\-()+]/g, '');
     if (!cleanPhone || cleanPhone.length < 8) {
       setErrorMessage('Please enter a valid phone number (at least 8 digits).');
@@ -635,8 +656,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMessage('');
     setSuccessMessage('');
 
-    if (!forgotEmail.trim() || !forgotEmail.includes('@')) {
-      setErrorMessage('Please enter your registered account email.');
+    const targetEmail = forgotEmail.trim().toLowerCase();
+    if (!targetEmail || !targetEmail.includes('@')) {
+      setErrorMessage('অনুগ্রহ করে সঠিক রেজিস্টার্ড ইমেইল অ্যাড্রেস লিখুন। (Please enter your registered account email.)');
+      return;
+    }
+
+    // Verify if email exists in database/accounts list
+    const existingUser = allUsers.find(u => u.email.toLowerCase() === targetEmail);
+    if (!existingUser) {
+      setErrorMessage(`⚠️ "${forgotEmail.trim()}" ইমেইলটি আমাদের সিস্টেমে খুঁজে পাওয়া যায়নি। অনুগ্রহ করে সঠিক ইমেইল দিন অথবা সাইন আপ করুন।`);
       return;
     }
 
@@ -648,10 +677,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setForgotOtp(demoOtp); // pre-populate for frictionless verification
       setForgotPhase('verify');
       setIsLoading(false);
-      setSuccessMessage(`Reset code generated for ${forgotEmail.trim()}. Code: ${demoOtp}`);
+      setSuccessMessage(`✅ পাসওয়ার্ড রিসেট ওয়ান-টাইম কোড (OTP) জেনারেট হয়েছে: ${demoOtp}`);
     } catch (err: any) {
       setIsLoading(false);
-      setErrorMessage(err?.message || 'Could not send reset code.');
+      setErrorMessage(err?.message || 'পাসওয়ার্ড রিসেট কোড পাঠাতে সমস্যা হয়েছে।');
     }
   };
 
@@ -660,28 +689,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setErrorMessage('');
 
     if (forgotOtp.trim() !== generatedOtp.trim()) {
-      setErrorMessage('Invalid verification code. Please check and try again.');
+      setErrorMessage('ভুল ওয়ান-টাইম পিন (OTP Code)। দয়া করে সঠিক কোডটি লিখুন।');
       return;
     }
     if (newResetPassword.length < 6) {
-      setErrorMessage('New password must be at least 6 characters long.');
+      setErrorMessage('পাসওয়ার্ড ন্যূনতম ৬ অক্ষরের হতে হবে।');
       return;
     }
     if (newResetPassword !== confirmResetPassword) {
-      setErrorMessage('Passwords do not match.');
+      setErrorMessage('দুটো পাসওয়ার্ড মেলেনি (Passwords do not match)।');
       return;
     }
 
     const resetSuccess = resetUserPasswordByEmail(forgotEmail.trim(), newResetPassword);
     if (!resetSuccess) {
-      setErrorMessage('No user account found matching this email address.');
+      setErrorMessage('এই ইমেইল সম্পর্কিত কোনো অ্যাকাউন্ট পাওয়া যায়নি।');
       return;
     }
 
     setForgotPhase('success');
+    setEmail(forgotEmail.trim()); // pre-fill login email for convenience
     addNotification({
-      title: 'Password Successfully Reset 🔑',
-      message: `Password updated for ${forgotEmail}. You can now sign in with your new credentials.`,
+      title: 'পাসওয়ার্ড সফলভাবে পরিবর্তিত হয়েছে! 🔑',
+      message: `${forgotEmail} এর পাসওয়ার্ড আপডেট করা হয়েছে। এখন নতুন পাসওয়ার্ড দিয়ে সাইন ইন করুন।`,
       type: 'system'
     });
   };
@@ -868,19 +898,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             </div>
 
-            {/* Mode Switch (Sign In vs Sign Up) */}
-            <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800/80 flex items-center justify-between">
+            {/* Mode Switch (Sign In vs Sign Up vs Forgot Password) */}
+            <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <span className="text-xs text-slate-400">
                 Current selection: <strong className="text-slate-200 capitalize">{portalType} Portal</strong>
               </span>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <button
                   type="button"
                   onClick={() => setAuthMode('signin')}
-                  className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
+                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
                     authMode === 'signin'
                       ? 'bg-slate-800 text-white shadow'
-                      : 'text-slate-400 hover:text-slate-200'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
                   }`}
                 >
                   Sign In
@@ -888,13 +918,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setAuthMode('signup')}
-                  className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
+                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
                     authMode === 'signup'
                       ? 'bg-cyan-600 text-white shadow'
-                      : 'text-slate-400 hover:text-slate-200'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
                   }`}
                 >
                   Sign Up
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('forgot_password');
+                    setStep(2);
+                  }}
+                  className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg transition cursor-pointer flex items-center gap-1 ${
+                    authMode === 'forgot_password'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                      : 'text-amber-400/90 hover:text-amber-300 hover:bg-amber-500/10'
+                  }`}
+                  title="পাসওয়ার্ড ভুলে গেছেন? রিসেট করতে ক্লিক করুন"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>Forgot Password?</span>
                 </button>
               </div>
             </div>
@@ -911,7 +957,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               }}
               className="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 transition cursor-pointer"
             >
-              <span>Continue to {authMode === 'signin' ? 'Sign In' : 'Registration'}</span>
+              <span>
+                {authMode === 'signin' 
+                  ? 'Continue to Sign In' 
+                  : authMode === 'signup' 
+                    ? 'Continue to Registration' 
+                    : 'Continue to Password Recovery'}
+              </span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -955,19 +1007,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   Change
                 </button>
               </div>
-            </div>
-
-            {/* Quick Demo Autofill Bar */}
-            <div className="flex items-center justify-between bg-slate-950/60 p-2 rounded-lg border border-slate-800/80 text-[11px]">
-              <span className="text-slate-400">Testing preview?</span>
-              <button
-                type="button"
-                onClick={() => handleQuickDemoFill(portalType, authMode === 'signup' ? 'signup' : 'signin')}
-                className="text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1 transition"
-              >
-                <Zap className="w-3 h-3 text-amber-400" />
-                <span>Autofill {portalType} test {authMode === 'signup' ? 'signup' : 'credentials'}</span>
-              </button>
             </div>
 
             {/* --------------------------------------------------------------------- */}
@@ -1024,10 +1063,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       </label>
                       <button
                         type="button"
-                        onClick={() => setAuthMode('forgot_password')}
-                        className="text-[11px] text-cyan-400 hover:text-cyan-300"
+                        onClick={() => {
+                          setForgotEmail(email);
+                          setAuthMode('forgot_password');
+                        }}
+                        className="text-[11px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 transition cursor-pointer"
+                        title="পাসওয়ার্ড ভুলে গেছেন? রিসেট করতে ক্লিক করুন"
                       >
-                        Forgot Password?
+                        <KeyRound className="w-3 h-3" />
+                        <span>Forgot Password? (পাসওয়ার্ড ভুলে গেছেন?)</span>
                       </button>
                     </div>
                     <div className="relative">
@@ -1049,6 +1093,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       </button>
                     </div>
                   </div>
+                </div>
+
+                {/* Prominent Quick Action for Forgot Password */}
+                <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-[11px] text-amber-300">
+                    <KeyRound className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>পাসওয়ার্ড মনে নেই? (Forgot Password)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotEmail(email);
+                      setAuthMode('forgot_password');
+                    }}
+                    className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-[11px] rounded-lg border border-amber-500/30 transition cursor-pointer"
+                  >
+                    Reset Password &rarr;
+                  </button>
                 </div>
 
                 <button
@@ -1599,9 +1661,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         <button
                           type="button"
                           onClick={handleGenerateTestTrxId}
-                          className="text-[10px] text-cyan-400 hover:underline"
+                          className="text-[10px] text-cyan-400 hover:text-cyan-300 hover:underline font-mono"
                         >
-                          Generate Demo TrxID
+                          Auto-generate Ref
                         </button>
                       </div>
                       <input
