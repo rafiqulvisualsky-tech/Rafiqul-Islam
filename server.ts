@@ -303,6 +303,7 @@ function extractJsonArray(rawText: string): any[] | null {
 
 // Endpoint: AI Lead Generation Engine with Multi-Social Media & Major Business Directory Filters (Google, Google Maps, Yelp, etc.)
 app.post('/api/leads/generate', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   try {
     const {
       niche = 'SaaS Founders',
@@ -317,7 +318,7 @@ app.post('/api/leads/generate', async (req, res) => {
       requirePhone = true,
       requireSocials = true,
       customRole = ''
-    } = req.body;
+    } = req.body || {};
 
     const count = Math.min(Math.max(Number(batchSize) || 10, 1), 50);
     const targetRole = customRole.trim() || leadType || 'Founder & CEO';
