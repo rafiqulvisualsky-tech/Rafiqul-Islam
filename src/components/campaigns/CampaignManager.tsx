@@ -115,6 +115,7 @@ export const CampaignManager: React.FC = () => {
 
   // Step 2: Select SMTP (with Multi-tag, Provider Filter & Multi-mailbox Selection)
   const activeSmtps = useMemo(() => smtpAccounts.filter(s => !s.isTrash), [smtpAccounts]);
+  const activeCampaigns = useMemo(() => campaigns.filter(c => !c.isTrash), [campaigns]);
   const [selectedSmtpIds, setSelectedSmtpIds] = useState<string[]>(() => {
     return activeSmtps.length > 0 ? activeSmtps.map(s => s.id) : [];
   });
@@ -291,15 +292,26 @@ export const CampaignManager: React.FC = () => {
   }, [activeLeads, wizardLeadSearch, recipientFilter, selectedLeadTags]);
 
   const handleToggleTagFilter = (tagName: string) => {
+    let nextTags: string[];
     if (selectedLeadTags.includes(tagName)) {
-      setSelectedLeadTags(selectedLeadTags.filter(t => t !== tagName));
+      nextTags = selectedLeadTags.filter(t => t !== tagName);
     } else {
-      setSelectedLeadTags([...selectedLeadTags, tagName]);
+      nextTags = [...selectedLeadTags, tagName];
+    }
+    setSelectedLeadTags(nextTags);
+    if (nextTags.length > 0) {
+      const matchingIds = activeLeads
+        .filter(l => l.tags && l.tags.some(t => nextTags.includes(t)))
+        .map(l => l.id);
+      setSelectedLeadIds(matchingIds);
+    } else {
+      setSelectedLeadIds(activeLeads.map(l => l.id));
     }
   };
 
   const clearLeadTagFilters = () => {
     setSelectedLeadTags([]);
+    setSelectedLeadIds(activeLeads.map(l => l.id));
   };
 
   const selectAllMatchingTagLeads = () => {
@@ -804,7 +816,7 @@ export const CampaignManager: React.FC = () => {
     overrideInterval?: number
   ) => {
     setShowWizardModal(false);
-    setShowLiveDispatcher(true);
+    setShowLiveDispatcher(false); // Seamless background dispatch without popup modal
     setIsDispatching(true);
     setIsPaused(false);
     abortDispatchRef.current = false;
@@ -822,6 +834,12 @@ export const CampaignManager: React.FC = () => {
       triggerCondition: 'all' as const
     };
     const intervalSec = overrideInterval !== undefined ? overrideInterval : sendingInterval;
+
+    addNotification({
+      title: `Campaign Started: "${targetCampaign.name}" 🚀`,
+      message: `Sequenced dispatch started for ${targetLeads.length} leads in the background.`,
+      type: 'campaign'
+    });
 
     setDispatchProgress({
       currentLeadIndex: 0,
@@ -1142,11 +1160,11 @@ export const CampaignManager: React.FC = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Layers className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-base font-bold text-slate-100">Active Campaign Sequences ({campaigns.length})</h2>
+            <h2 className="text-base font-bold text-slate-100">Active Campaign Sequences ({activeCampaigns.length})</h2>
           </div>
         </div>
 
-        {campaigns.length === 0 ? (
+        {activeCampaigns.length === 0 ? (
           <div className="p-12 rounded-3xl bg-slate-900/40 border border-dashed border-slate-800 text-center space-y-3">
             <Send className="w-10 h-10 text-slate-600 mx-auto" />
             <div className="text-sm font-bold text-slate-300">No campaigns launched yet</div>
@@ -1163,7 +1181,7 @@ export const CampaignManager: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4">
-            {campaigns.map((camp) => {
+            {activeCampaigns.map((camp) => {
               const assignedSmtp = smtpAccounts.find(s => s.id === camp.assignedSmtpId);
               return (
                 <div
@@ -2341,16 +2359,16 @@ export const CampaignManager: React.FC = () => {
                           <div className="flex items-center gap-2">
                             {/* Direct Template Loader Dropdown for this step */}
                             <select
+                              value={appliedTemplates[idx]?.id || ''}
                               onChange={(e) => {
                                 const found = emailTemplates.find(t => t.id === e.target.value);
                                 if (found) {
                                   handleApplyTemplate(found, idx);
                                 }
                               }}
-                              defaultValue=""
                               className="text-[11px] font-bold bg-slate-950 text-cyan-300 border border-slate-700 rounded-lg px-2.5 py-1 cursor-pointer focus:outline-none focus:border-cyan-500"
                             >
-                              <option value="" disabled>⚡ Load Saved Template...</option>
+                              <option value="">⚡ Load Saved Template...</option>
                               {emailTemplates.filter(t => !t.isTrash).map(t => (
                                 <option key={t.id} value={t.id}>
                                   {t.title} ({t.category})

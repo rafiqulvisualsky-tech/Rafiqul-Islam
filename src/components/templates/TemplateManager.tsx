@@ -158,17 +158,29 @@ export const TemplateManager: React.FC = () => {
   };
 
   const handleSaveEdit = () => {
-    if (!editForm.title || !editForm.subject || !editForm.body) return;
+    const title = editForm.title?.trim() || 'Custom Outreach Template';
+    const subject = editForm.subject?.trim() || 'Quick question regarding {{company}}';
+    const body = editForm.body?.trim() || 'Hi {{name}},\n\nReaching out regarding {{company}}.\n\nBest regards,';
+    const category = (editForm.category as any) || 'custom';
+    const tags = editForm.tags && editForm.tags.length > 0 ? editForm.tags : ['Custom', 'Outreach'];
 
     if (editForm.id) {
       // Update existing
-      const updated = emailTemplates.map(t => t.id === editForm.id ? { ...t, ...editForm } as EmailTemplate : t);
+      const updated = emailTemplates.map(t => t.id === editForm.id ? { 
+        ...t, 
+        ...editForm,
+        title,
+        subject,
+        body,
+        category,
+        tags
+      } as EmailTemplate : t);
       saveToStorage(updated);
       const found = updated.find(t => t.id === editForm.id);
       if (found) setActiveTemplate(found);
       addNotification({
-        title: `Template Updated 📝`,
-        message: `"${editForm.title}" is ready in Smart Inbox & Outreach.`,
+        title: `Template Saved 📝`,
+        message: `"${title}" has been saved successfully.`,
         type: 'system',
         linkTab: 'templates'
       });
@@ -176,11 +188,11 @@ export const TemplateManager: React.FC = () => {
       // Add new (prepended to top)
       const created: EmailTemplate = {
         id: `tmpl-${Date.now()}`,
-        title: editForm.title || 'Untitled Template',
-        category: (editForm.category as any) || 'custom',
-        subject: editForm.subject || '',
-        body: editForm.body || '',
-        tags: editForm.tags && editForm.tags.length > 0 ? editForm.tags : ['Custom'],
+        title,
+        category,
+        subject,
+        body,
+        tags,
         isCustom: true,
         usageCount: 0,
         replyRatePercent: 0,
@@ -191,7 +203,7 @@ export const TemplateManager: React.FC = () => {
       setActiveTemplate(created);
       addNotification({
         title: `New Template Created 📝`,
-        message: `"${created.title}" is now available in Smart Inbox & Single Mailer.`,
+        message: `"${created.title}" is saved and available across all campaigns & inbox.`,
         type: 'system',
         linkTab: 'templates'
       });

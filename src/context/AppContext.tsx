@@ -271,7 +271,44 @@ export const INITIAL_TEMPLATE_CATEGORIES: TemplateCategory[] = [
   { id: 'agency_pitch', name: 'agency_pitch', label: 'Agency White-Label', color: 'emerald' },
 ];
 
-export const INITIAL_TEMPLATES: EmailTemplate[] = [];
+export const INITIAL_TEMPLATES: EmailTemplate[] = [
+  {
+    id: 'tmpl-builtin-1',
+    title: 'Executive Cold Outreach (High Deliverability)',
+    category: 'cold_outreach',
+    subject: 'quick question regarding {{company}}',
+    body: `Hi {{name}},\n\nNoticed your recent work at {{company}} in {{niche}}.\n\nWe recently helped a similar team achieve a 3.8x boost in booked outbound meetings through automated multi-relay warmup and 99.8% primary inbox placement.\n\nWould you be open to a quick 2-minute video breakdown this Thursday?\n\nBest regards,`,
+    tags: ['Outreach', 'B2B', 'Deliverability'],
+    isCustom: false,
+    usageCount: 142,
+    replyRatePercent: 28.4,
+    createdAt: '2026-08-01'
+  },
+  {
+    id: 'tmpl-builtin-2',
+    title: '7-Day Value Add Follow-Up',
+    category: 'followup_7d',
+    subject: 'idea for {{company}}\'s outbound stack',
+    body: `Hi {{name}},\n\nFollowing up on my note from last week regarding {{company}}.\n\nThought you might find this relevant—we put together a 1-page deliverability checklist that eliminates spam filter triggers across Outlook and Google Workspace.\n\nHappy to share if helpful?\n\nBest,`,
+    tags: ['FollowUp', 'Value-Add'],
+    isCustom: false,
+    usageCount: 89,
+    replyRatePercent: 34.2,
+    createdAt: '2026-08-05'
+  },
+  {
+    id: 'tmpl-builtin-3',
+    title: '30-Day Polite Breakup Email',
+    category: 'breakup_30d',
+    subject: 'permission to close {{company}}\'s file?',
+    body: `Hi {{name}},\n\nI haven't heard back, so I assume scaling cold outbound isn't a priority for {{company}} right now.\n\nI'll go ahead and close your file so I don't clutter your inbox.\n\nIf anything changes down the road, feel free to reach back out anytime.\n\nBest regards,`,
+    tags: ['Breakup', 'CleanUp'],
+    isCustom: false,
+    usageCount: 65,
+    replyRatePercent: 41.0,
+    createdAt: '2026-08-10'
+  }
+];
 
 // Initial Threads (Clean empty initial list)
 const INITIAL_THREADS: EmailThread[] = [];
@@ -371,6 +408,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else {
       setActiveTabState('dashboard');
     }
+    // Cross-browser sync: immediately load server workspace
+    loadUserWorkspace(user.email);
   };
 
   const setActiveTab = (tab: string) => {
@@ -458,12 +497,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return [syncedUser, ...prev];
         });
 
-        // Auto-redirect to appropriate dashboard
-        if (isAgency) {
-          setActiveTabState('owner');
-        } else {
-          setActiveTabState('dashboard');
-        }
+        // Load persisted workspace from server
+        loadUserWorkspace(syncedUser.email);
       }
     });
 
@@ -530,6 +565,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
           return [syncedUser, ...prev];
         });
+
+        // Load persisted workspace from server
+        loadUserWorkspace(syncedUser.email);
 
         // Auto-redirect to appropriate dashboard
         if (isAgency) {
@@ -706,7 +744,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
 
-  // Sync to LocalStorage
+  // Load user workspace from server (Cross-Browser Persistence)
+  const loadUserWorkspace = async (userEmail: string) => {
+    if (!userEmail) return;
+    try {
+      const res = await fetch(`/api/user-data/${encodeURIComponent(userEmail.toLowerCase())}`);
+      if (res.ok) {
+        const { data } = await res.json();
+        if (data) {
+          if (Array.isArray(data.leads) && data.leads.length > 0) setLeads(data.leads);
+          if (Array.isArray(data.leadTags) && data.leadTags.length > 0) setLeadTags(data.leadTags);
+          if (Array.isArray(data.smtpAccounts) && data.smtpAccounts.length > 0) setSmtpAccounts(data.smtpAccounts);
+          if (Array.isArray(data.campaigns) && data.campaigns.length > 0) setCampaigns(data.campaigns);
+          if (Array.isArray(data.emailTemplates) && data.emailTemplates.length > 0) setEmailTemplates(data.emailTemplates);
+          if (Array.isArray(data.templateCategories) && data.templateCategories.length > 0) setTemplateCategories(data.templateCategories);
+          if (Array.isArray(data.threads) && data.threads.length > 0) setThreads(data.threads);
+          if (Array.isArray(data.sentEmails) && data.sentEmails.length > 0) setSentEmails(data.sentEmails);
+          if (Array.isArray(data.minedLeads) && data.minedLeads.length > 0) setMinedLeads(data.minedLeads);
+          if (Array.isArray(data.columnSettings) && data.columnSettings.length > 0) setColumnSettings(data.columnSettings);
+        }
+      }
+    } catch (err) {
+      console.warn('Server workspace sync fallback:', err);
+    }
+  };
+
+  // Sync all users and initial workspace on mount
+  useEffect(() => {
+    fetch('/api/users/registry')
+      .then(r => r.json())
+      .then(d => {
+        if (d.success && Array.isArray(d.users) && d.users.length > 0) {
+          setAllUsers(prev => {
+            const merged = [...prev];
+            for (const u of d.users) {
+              if (!merged.some(m => m.email.toLowerCase() === u.email.toLowerCase())) {
+                merged.push(u);
+              }
+            }
+            return merged;
+          });
+        }
+      })
+      .catch(() => {});
+
+    if (currentUser?.email) {
+      loadUserWorkspace(currentUser.email);
+    }
+  }, []);
+
+  // Sync to LocalStorage & Server (Debounced)
   useEffect(() => { localStorage.setItem('visualsky_tags', JSON.stringify(leadTags)); }, [leadTags]);
   useEffect(() => { localStorage.setItem('visualsky_leads', JSON.stringify(leads)); }, [leads]);
   useEffect(() => { localStorage.setItem('visualsky_cols', JSON.stringify(columnSettings)); }, [columnSettings]);
@@ -718,9 +805,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => { localStorage.setItem('visualsky_sent_emails', JSON.stringify(sentEmails)); }, [sentEmails]);
   useEffect(() => { localStorage.setItem('visualsky_notifs', JSON.stringify(notifications)); }, [notifications]);
   useEffect(() => { localStorage.setItem('visualsky_current_user', JSON.stringify(currentUser)); }, [currentUser]);
-  useEffect(() => { localStorage.setItem('visualsky_users', JSON.stringify(allUsers)); }, [allUsers]);
+  useEffect(() => { 
+    localStorage.setItem('visualsky_users', JSON.stringify(allUsers));
+    // Also sync all users to server registry
+    fetch('/api/users/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ users: allUsers })
+    }).catch(() => {});
+  }, [allUsers]);
   useEffect(() => { localStorage.setItem('visualsky_mined_leads', JSON.stringify(minedLeads)); }, [minedLeads]);
   useEffect(() => { localStorage.setItem('visualsky_notification_settings', JSON.stringify(notificationSettings)); }, [notificationSettings]);
+
+  // Debounced server workspace sync
+  useEffect(() => {
+    if (!currentUser?.email) return;
+    const timer = setTimeout(() => {
+      fetch(`/api/user-data/${encodeURIComponent(currentUser.email.toLowerCase())}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          data: {
+            leads,
+            leadTags,
+            smtpAccounts,
+            campaigns,
+            emailTemplates,
+            templateCategories,
+            threads,
+            sentEmails,
+            minedLeads,
+            columnSettings,
+            notificationSettings
+          }
+        })
+      }).catch(() => {});
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [leads, leadTags, smtpAccounts, campaigns, emailTemplates, templateCategories, threads, sentEmails, minedLeads, columnSettings, notificationSettings, currentUser?.email]);
 
   // Play notification audio using Web Audio API or custom audio
   const playNotificationSound = (overridePreset?: string) => {

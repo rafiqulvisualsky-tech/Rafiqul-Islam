@@ -263,9 +263,10 @@ export const LeadDirectory: React.FC<LeadDirectoryProps> = ({ onOpenSendMail }) 
     confetti({ particleCount: 40, spread: 60 });
   };
 
-  // CSV File Parsing
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const [isDragOver, setIsDragOver] = useState<boolean>(false);
+
+  // Robust File Parsing (CSV, TXT, TSV, JSON)
+  const processUploadedFile = (file: File) => {
     if (!file) return;
 
     setUploadedFileName(file.name);
@@ -277,44 +278,159 @@ export const LeadDirectory: React.FC<LeadDirectoryProps> = ({ onOpenSendMail }) 
       if (!text) return;
 
       try {
-        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-        if (lines.length < 2) {
-          setUploadError('CSV file has no data rows');
+        const parsed: Partial<Lead>[] = [];
+
+        // Check if JSON file
+        if (file.name.endsWith('.json')) {
+          const json = JSON.parse(text);
+          const list = Array.isArray(json) ? json : (json.leads || []);
+          for (const item of list) {
+            if (item.email || item.name) {
+              parsed.push({
+                name: item.name || 'Prospective Lead',
+                email: item.email || `lead${parsed.length + 1}@company.com`,
+                company: item.company || 'Enterprise Corp',
+                title: item.title || 'Decision Maker',
+                phone: item.phone || '+1 (555) 000-0000',
+                website: item.website || 'https://example.com',
+                niche: item.niche || 'Imported Target',
+                location: item.location || 'United States',
+                tags: [uploadSelectedTag || 'Imported Leads']
+              });
+            }
+          }
+          if (parsed.length > 0) {
+            setParsedLeadsPreview(parsed);
+            setShowUploadModal(true);
+            return;
+          }
+        }
+
+        // CSV / TSV / TXT Parsing
+        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        if (lines.length === 0) {
+          setUploadError('File is empty. Please select a valid CSV or TXT file.');
           return;
         }
 
-        const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
-        const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('contact'));
-        const emailIdx = headers.findIndex(h => h.includes('email') || h.includes('mail'));
-        const compIdx = headers.findIndex(h => h.includes('company') || h.includes('business') || h.includes('org'));
-        const titleIdx = headers.findIndex(h => h.includes('title') || h.includes('role') || h.includes('position'));
-        const phoneIdx = headers.findIndex(h => h.includes('phone') || h.includes('mobile') || h.includes('tel'));
-        const webIdx = headers.findIndex(h => h.includes('website') || h.includes('url') || h.includes('domain'));
+        // Detect delimiter (comma, semicolon, tab)
+        const firstLine = lines[0];
+        const delimiter = firstLine.includes('\t') ? '\t' : (firstLine.includes(';') ? ';' : ',');
 
-        const parsed: Partial<Lead>[] = [];
-        for (let i = 1; i < lines.length; i++) {
-          const cols = lines[i].split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
-          if (cols.length >= 2) {
+        // Check if file has a header row
+        const lowerFirst = firstLine.toLowerCase();
+        const hasHeader = lowerFirst.includes('email') || lowerFirst.includes('name') || lowerFirst.includes('company') || lowerFirst.includes('mail');
+
+        let nameIdx = -1, emailIdx = -1, compIdx = -1, titleIdx = -1, phoneIdx = -1, webIdx = -1;
+        let startIndex = 0;
+
+        if (hasHeader) {
+          startIndex = 1;
+          const headers = firstLine.split(delimiter).map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+          nameIdx = headers.findIndex(h => h.includes('name') || h.includes('contact') || h.includes('person'));
+          emailIdx = headers.findIndex(h => h.includes('email') || h.includes('mail'));
+          compIdx = headers.findIndex(h => h.includes('company') || h.includes('business') || h.includes('org') || h.includes('account'));
+          titleIdx = headers.findIndex(h => h.includes('title') || h.includes('role') || h.includes('position') || h.includes('job'));
+          phoneIdx = headers.findIndex(h => h.includes('phone') || h.includes('mobile') || h.includes('tel') || h.includes('cell'));
+          webIdx = headers.findIndex(h => h.includes('website') || h.includes('url') || h.includes('domain') || h.includes('site'));
+        }
+
+        for (let i = startIndex; i < lines.length; i++) {
+          const rawLine = lines[i];
+          const cols = rawLine.split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
+          
+          let email = '';
+          let name = '';
+          let company = '';
+          let title = 'Decision Maker';
+          let phone = '+1 (555) 019-2834';
+          let website = 'https://example.com';
+
+          if (hasHeader) {
+            email = emailIdx !== -1 ? cols[emailIdx] : '';
+            name = nameIdx !== -1 ? cols[nameIdx] : '';
+            company = compIdx !== -1 ? cols[compIdx] : '';
+            if (titleIdx !== -1 && cols[titleIdx]) title = cols[titleIdx];
+            if (phoneIdx !== -1 && cols[phoneIdx]) phone = cols[phoneIdx];
+            if (webIdx !== -1 && cols[webIdx]) website = cols[webIdx];
+          } else {
+            // Find email in cols
+            const foundEmail = cols.find(c => c.includes('@') && c.includes('.'));
+            if (foundEmail) {
+              email = foundEmail;
+              const nonEmailCols = cols.filter(c => c !== foundEmail);
+              if (nonEmailCols.length > 0) name = nonEmailCols[0];
+              if (nonEmailCols.length > 1) company = nonEmailCols[1];
+            } else if (cols.length >= 2) {
+              name = cols[0];
+              email = cols[1];
+              company = cols[2] || '';
+            } else if (cols.length === 1 && cols[0].includes('@')) {
+              email = cols[0];
+              name = email.split('@')[0].replace(/[._-]/g, ' ');
+            }
+          }
+
+          if (!email && cols[0] && cols[0].includes('@')) {
+            email = cols[0];
+          }
+
+          if (email || name) {
             parsed.push({
-              name: nameIdx !== -1 ? cols[nameIdx] : cols[0] || 'Prospective Lead',
-              email: emailIdx !== -1 ? cols[emailIdx] : cols[1] || 'lead@example.com',
-              company: compIdx !== -1 ? cols[compIdx] : cols[2] || 'Enterprise Corp',
-              title: titleIdx !== -1 ? cols[titleIdx] : 'Decision Maker',
-              phone: phoneIdx !== -1 ? cols[phoneIdx] : '+1 (555) 000-0000',
-              website: webIdx !== -1 ? cols[webIdx] : 'https://example.com',
+              name: name || (email ? email.split('@')[0].replace(/[._-]/g, ' ') : 'Prospective Lead'),
+              email: email || `contact${parsed.length + 1}@leadtarget.io`,
+              company: company || 'Enterprise Partner',
+              title: title || 'Executive Decision Maker',
+              phone: phone || '+1 (555) 019-2834',
+              website: website || 'https://example.com',
               niche: 'Imported CSV Target',
               location: 'United States',
-              tags: [uploadSelectedTag]
+              tags: [uploadSelectedTag || 'Imported Leads']
             });
           }
         }
 
+        if (parsed.length === 0) {
+          setUploadError('No valid contacts or email rows found in the uploaded file.');
+          return;
+        }
+
         setParsedLeadsPreview(parsed);
+        setShowUploadModal(true);
       } catch (err: any) {
-        setUploadError(`Failed to parse CSV: ${err.message}`);
+        setUploadError(`Failed to parse file: ${err.message}`);
       }
     };
     reader.readAsText(file);
+  };
+
+  // CSV File Input Handler
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processUploadedFile(file);
+  };
+
+  // Drag & Drop Handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      processUploadedFile(file);
+    }
   };
 
   const handleConfirmUpload = () => {
@@ -333,7 +449,21 @@ export const LeadDirectory: React.FC<LeadDirectoryProps> = ({ onOpenSendMail }) 
   };
 
   return (
-    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
+    <div 
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 relative"
+    >
+      {/* Global Drag & Drop Overlay */}
+      {isDragOver && (
+        <div className="fixed inset-0 z-50 bg-cyan-950/85 backdrop-blur-sm border-4 border-dashed border-cyan-400 flex flex-col items-center justify-center p-6 pointer-events-none animate-in fade-in">
+          <Upload className="w-16 h-16 text-cyan-300 animate-bounce mb-3" />
+          <h2 className="text-2xl font-black text-white">Drop Lead File Anywhere to Import</h2>
+          <p className="text-sm text-cyan-200 mt-1">Supports CSV, TXT, TSV & JSON lead lists</p>
+        </div>
+      )}
+
       {/* Top Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -1129,19 +1259,22 @@ export const LeadDirectory: React.FC<LeadDirectoryProps> = ({ onOpenSendMail }) 
 
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="p-6 border-2 border-dashed border-slate-800 hover:border-cyan-500/50 rounded-2xl text-center space-y-2 cursor-pointer transition bg-slate-950/40"
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`p-6 border-2 border-dashed ${isDragOver ? 'border-cyan-400 bg-cyan-950/40' : 'border-slate-800 hover:border-cyan-500/50 bg-slate-950/40'} rounded-2xl text-center space-y-2 cursor-pointer transition`}
               >
-                <Upload className="w-8 h-8 text-slate-500 mx-auto" />
-                <div className="text-xs font-bold text-slate-300">
-                  {uploadedFileName ? uploadedFileName : 'Click or Drag & Drop CSV File'}
+                <Upload className="w-8 h-8 text-cyan-400 mx-auto" />
+                <div className="text-xs font-bold text-slate-200">
+                  {uploadedFileName ? uploadedFileName : 'Click or Drag & Drop Lead File (CSV, TXT, TSV, JSON)'}
                 </div>
-                <p className="text-[11px] text-slate-500">
-                  Supports headers: Name, Title, Company, Email, Phone, Website
+                <p className="text-[11px] text-slate-400">
+                  Auto-detects columns: Name, Title, Company, Email, Phone, Website
                 </p>
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".csv"
+                  accept=".csv,.txt,.tsv,.json"
                   onChange={handleFileChange}
                   className="hidden"
                 />
