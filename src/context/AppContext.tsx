@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { 
   Lead, 
   LeadTag,
@@ -191,6 +191,11 @@ interface AppContextType {
   // AI Mined Cache
   minedLeads: Lead[];
   setMinedLeads: React.Dispatch<React.SetStateAction<Lead[]>>;
+  
+  // Cross-Browser Cloud Workspace Sync
+  loadUserWorkspace: (userEmail: string) => Promise<void>;
+  isWorkspaceLoading: boolean;
+  syncStatus: 'synced' | 'syncing' | 'offline';
   
   // Trash Operations
   emptyAllTrash: () => void;
@@ -443,6 +448,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!isAgencyUser(user) && activeTab === 'owner') {
       setActiveTabState('dashboard');
       try { localStorage.setItem('visualsky_active_tab', 'dashboard'); } catch {}
+    }
+    if (user?.email && user.email.toLowerCase() !== loadedWorkspaceEmailRef.current) {
+      loadUserWorkspace(user.email);
     }
   };
 
@@ -798,29 +806,80 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
+  const loadedWorkspaceEmailRef = useRef<string | null>(null);
+  const [isWorkspaceLoading, setIsWorkspaceLoading] = useState<boolean>(false);
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline'>('synced');
 
   // Load user workspace from server (Cross-Browser Persistence)
   const loadUserWorkspace = async (userEmail: string) => {
     if (!userEmail) return;
+    const cleanEmail = userEmail.trim().toLowerCase();
+    setIsWorkspaceLoading(true);
+    setSyncStatus('syncing');
+
     try {
-      const res = await fetch(`/api/user-data/${encodeURIComponent(userEmail.toLowerCase())}`);
+      const res = await fetch(`/api/user-data/${encodeURIComponent(cleanEmail)}`);
       if (res.ok) {
-        const { data } = await res.json();
-        if (data) {
-          if (Array.isArray(data.leads) && data.leads.length > 0) setLeads(data.leads);
-          if (Array.isArray(data.leadTags) && data.leadTags.length > 0) setLeadTags(data.leadTags);
-          if (Array.isArray(data.smtpAccounts) && data.smtpAccounts.length > 0) setSmtpAccounts(data.smtpAccounts);
-          if (Array.isArray(data.campaigns) && data.campaigns.length > 0) setCampaigns(data.campaigns);
-          if (Array.isArray(data.emailTemplates) && data.emailTemplates.length > 0) setEmailTemplates(data.emailTemplates);
-          if (Array.isArray(data.templateCategories) && data.templateCategories.length > 0) setTemplateCategories(data.templateCategories);
-          if (Array.isArray(data.threads) && data.threads.length > 0) setThreads(data.threads);
-          if (Array.isArray(data.sentEmails) && data.sentEmails.length > 0) setSentEmails(data.sentEmails);
-          if (Array.isArray(data.minedLeads) && data.minedLeads.length > 0) setMinedLeads(data.minedLeads);
-          if (Array.isArray(data.columnSettings) && data.columnSettings.length > 0) setColumnSettings(data.columnSettings);
+        const json = await res.json();
+        const data = json?.data;
+        if (data && typeof data === 'object') {
+          if (Array.isArray(data.leads)) {
+            setLeads(data.leads);
+            try { localStorage.setItem('visualsky_leads', JSON.stringify(data.leads)); } catch {}
+          }
+          if (Array.isArray(data.leadTags)) {
+            setLeadTags(data.leadTags);
+            try { localStorage.setItem('visualsky_tags', JSON.stringify(data.leadTags)); } catch {}
+          }
+          if (Array.isArray(data.smtpAccounts)) {
+            setSmtpAccounts(data.smtpAccounts);
+            try { localStorage.setItem('visualsky_smtp', JSON.stringify(data.smtpAccounts)); } catch {}
+          }
+          if (Array.isArray(data.campaigns)) {
+            setCampaigns(data.campaigns);
+            try { localStorage.setItem('visualsky_campaigns', JSON.stringify(data.campaigns)); } catch {}
+          }
+          if (Array.isArray(data.emailTemplates)) {
+            setEmailTemplates(data.emailTemplates);
+            try { localStorage.setItem('visualsky_templates', JSON.stringify(data.emailTemplates)); } catch {}
+          }
+          if (Array.isArray(data.templateCategories)) {
+            setTemplateCategories(data.templateCategories);
+            try { localStorage.setItem('visualsky_tmpl_categories', JSON.stringify(data.templateCategories)); } catch {}
+          }
+          if (Array.isArray(data.threads)) {
+            setThreads(data.threads);
+            try { localStorage.setItem('visualsky_threads', JSON.stringify(data.threads)); } catch {}
+          }
+          if (Array.isArray(data.sentEmails)) {
+            setSentEmails(data.sentEmails);
+            try { localStorage.setItem('visualsky_sent_emails', JSON.stringify(data.sentEmails)); } catch {}
+          }
+          if (Array.isArray(data.minedLeads)) {
+            setMinedLeads(data.minedLeads);
+            try { localStorage.setItem('visualsky_mined_leads', JSON.stringify(data.minedLeads)); } catch {}
+          }
+          if (Array.isArray(data.columnSettings)) {
+            setColumnSettings(data.columnSettings);
+            try { localStorage.setItem('visualsky_cols', JSON.stringify(data.columnSettings)); } catch {}
+          }
+          if (data.notificationSettings && typeof data.notificationSettings === 'object') {
+            setNotificationSettings(data.notificationSettings);
+            try { localStorage.setItem('visualsky_notification_settings', JSON.stringify(data.notificationSettings)); } catch {}
+          }
+          if (data.userProfile && typeof data.userProfile === 'object') {
+            setCurrentUserState(prev => ({ ...prev, ...data.userProfile }));
+          }
         }
       }
+      loadedWorkspaceEmailRef.current = cleanEmail;
+      setSyncStatus('synced');
     } catch (err) {
       console.warn('Server workspace sync fallback:', err);
+      loadedWorkspaceEmailRef.current = cleanEmail;
+      setSyncStatus('offline');
+    } finally {
+      setIsWorkspaceLoading(false);
     }
   };
 
@@ -843,12 +902,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       })
       .catch(() => {});
 
-    if (currentUser?.email) {
+    if (isAuthenticated && currentUser?.email) {
       loadUserWorkspace(currentUser.email);
     }
   }, []);
 
-  // Sync to LocalStorage & Server (Debounced)
+  // Sync to LocalStorage
   useEffect(() => { localStorage.setItem('visualsky_tags', JSON.stringify(leadTags)); }, [leadTags]);
   useEffect(() => { localStorage.setItem('visualsky_leads', JSON.stringify(leads)); }, [leads]);
   useEffect(() => { localStorage.setItem('visualsky_cols', JSON.stringify(columnSettings)); }, [columnSettings]);
@@ -872,11 +931,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => { localStorage.setItem('visualsky_mined_leads', JSON.stringify(minedLeads)); }, [minedLeads]);
   useEffect(() => { localStorage.setItem('visualsky_notification_settings', JSON.stringify(notificationSettings)); }, [notificationSettings]);
 
-  // Debounced server workspace sync
+  // Debounced server workspace sync - only runs when workspace for currentUser has been loaded
   useEffect(() => {
-    if (!currentUser?.email) return;
+    if (!isAuthenticated || !currentUser?.email) return;
+    const cleanEmail = currentUser.email.trim().toLowerCase();
+
+    // Guard: Prevent saving until this user's workspace is confirmed loaded from the backend
+    if (loadedWorkspaceEmailRef.current !== cleanEmail) {
+      return;
+    }
+
+    setSyncStatus('syncing');
     const timer = setTimeout(() => {
-      fetch(`/api/user-data/${encodeURIComponent(currentUser.email.toLowerCase())}`, {
+      fetch(`/api/user-data/${encodeURIComponent(cleanEmail)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -891,13 +958,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             sentEmails,
             minedLeads,
             columnSettings,
-            notificationSettings
+            notificationSettings,
+            userProfile: {
+              quotaUsed: currentUser.quotaUsed,
+              quotaLimit: currentUser.quotaLimit,
+              aiCredits: currentUser.aiCredits,
+              company: currentUser.company,
+              title: currentUser.title,
+              phone: currentUser.phone,
+              plan: currentUser.plan,
+              bdtPlanLabel: currentUser.bdtPlanLabel
+            }
           }
         })
-      }).catch(() => {});
+      })
+      .then(res => {
+        if (res.ok) setSyncStatus('synced');
+        else setSyncStatus('offline');
+      })
+      .catch(() => {
+        setSyncStatus('offline');
+      });
     }, 800);
+
     return () => clearTimeout(timer);
-  }, [leads, leadTags, smtpAccounts, campaigns, emailTemplates, templateCategories, threads, sentEmails, minedLeads, columnSettings, notificationSettings, currentUser?.email]);
+  }, [
+    leads,
+    leadTags,
+    smtpAccounts,
+    campaigns,
+    emailTemplates,
+    templateCategories,
+    threads,
+    sentEmails,
+    minedLeads,
+    columnSettings,
+    notificationSettings,
+    currentUser,
+    isAuthenticated
+  ]);
 
   // Play notification audio using Web Audio API or custom audio
   const playNotificationSound = (overridePreset?: string) => {
@@ -1795,6 +1894,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.removeItem('sb-wtylyugyemwndjcvskgq-auth-token');
     } catch {}
     
+    loadedWorkspaceEmailRef.current = null;
     setIsAuthenticatedState(false);
     setIsLogoutConfirmOpen(false);
     
@@ -2076,6 +2176,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         requestLogout,
         minedLeads,
         setMinedLeads,
+        loadUserWorkspace,
+        isWorkspaceLoading,
+        syncStatus,
         emptyAllTrash,
         totalTrashCount,
         simulateIncomingReply,

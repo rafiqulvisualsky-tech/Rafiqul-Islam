@@ -22,7 +22,8 @@ if (!fs.existsSync(DATA_DIR)) {
 }
 
 const getUserDataFilePath = (email: string) => {
-  const safeEmail = email.toLowerCase().replace(/[^a-z0-9_.-]/g, '_');
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const safeEmail = cleanEmail.replace(/[^a-z0-9_.-]/g, '_');
   return path.join(DATA_DIR, `user_${safeEmail}.json`);
 };
 
@@ -48,8 +49,27 @@ app.post('/api/users/sync', (req, res) => {
   try {
     const { users } = req.body;
     if (Array.isArray(users)) {
-      fs.writeFileSync(USERS_LIST_FILE, JSON.stringify(users, null, 2), 'utf-8');
-      return res.json({ success: true, count: users.length });
+      let existingUsers: any[] = [];
+      if (fs.existsSync(USERS_LIST_FILE)) {
+        try {
+          existingUsers = JSON.parse(fs.readFileSync(USERS_LIST_FILE, 'utf-8'));
+        } catch {}
+      }
+      // Merge users by email (case-insensitive) to prevent accidental loss
+      const userMap = new Map<string, any>();
+      for (const u of existingUsers) {
+        if (u.email) userMap.set(u.email.trim().toLowerCase(), u);
+      }
+      for (const u of users) {
+        if (u.email) {
+          const key = u.email.trim().toLowerCase();
+          const prev = userMap.get(key);
+          userMap.set(key, prev ? { ...prev, ...u } : u);
+        }
+      }
+      const mergedUsers = Array.from(userMap.values());
+      fs.writeFileSync(USERS_LIST_FILE, JSON.stringify(mergedUsers, null, 2), 'utf-8');
+      return res.json({ success: true, count: mergedUsers.length, users: mergedUsers });
     }
     return res.status(400).json({ error: 'Invalid users array' });
   } catch (err: any) {
@@ -191,34 +211,44 @@ app.post('/api/auth/reset-password', (req, res) => {
 });
 
 app.get('/api/user-data/:email', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   try {
-    const email = req.params.email;
-    if (!email) return res.status(400).json({ error: 'Email is required' });
+    const email = (req.params.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ success: false, error: 'Email is required' });
 
     const filePath = getUserDataFilePath(email);
     if (fs.existsSync(filePath)) {
       const content = fs.readFileSync(filePath, 'utf-8');
-      return res.json({ success: true, data: JSON.parse(content) });
+      try {
+        const parsed = JSON.parse(content);
+        return res.json({ success: true, data: parsed });
+      } catch (parseErr) {
+        console.error('Failed to parse user data file for', email, parseErr);
+        return res.json({ success: true, data: null });
+      }
     }
     return res.json({ success: true, data: null });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to retrieve user workspace' });
+    return res.status(500).json({ success: false, error: 'Failed to retrieve user workspace' });
   }
 });
 
 app.post('/api/user-data/:email', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   try {
-    const email = req.params.email;
-    if (!email) return res.status(400).json({ error: 'Email is required' });
+    const email = (req.params.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ success: false, error: 'Email is required' });
 
     const { data } = req.body;
-    if (!data) return res.status(400).json({ error: 'Workspace data required' });
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ success: false, error: 'Valid workspace data object required' });
+    }
 
     const filePath = getUserDataFilePath(email);
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
     return res.json({ success: true, savedAt: new Date().toISOString() });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Failed to persist user workspace' });
+    return res.status(500).json({ success: false, error: 'Failed to persist user workspace' });
   }
 });
 
