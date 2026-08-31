@@ -1521,7 +1521,7 @@ export const CampaignManager: React.FC = () => {
             </div>
 
             {/* Step Progress Pills */}
-            <div className="grid grid-cols-6 border-b border-slate-800 bg-slate-950/60 text-[10px] font-bold text-center">
+            <div className="flex overflow-x-auto sm:grid sm:grid-cols-6 border-b border-slate-800 bg-slate-950/60 text-[10px] sm:text-xs font-bold text-center no-scrollbar">
               {['1. Identity', '2. SMTP Relay', '3. Recipients', '4. Templates', '5. Delay & Schedule', '6. Launch'].map((label, idx) => {
                 const sNum = idx + 1;
                 const isCurrent = wizardStep === sNum;
@@ -1534,9 +1534,9 @@ export const CampaignManager: React.FC = () => {
                       if (sNum < wizardStep) setWizardStep(sNum);
                       else if (validateCurrentStep(wizardStep)) setWizardStep(sNum);
                     }}
-                    className={`py-2.5 px-1 border-r border-slate-800/80 transition cursor-pointer ${
+                    className={`py-2.5 px-3 sm:px-1 border-r border-slate-800/80 shrink-0 transition cursor-pointer ${
                       isCurrent ? 'bg-cyan-500/10 text-cyan-300 border-b-2 border-b-cyan-400' :
-                      isDone ? 'text-emerald-400' : 'text-slate-500'
+                      isDone ? 'text-emerald-400' : 'text-slate-500 hover:text-slate-300'
                     }`}
                   >
                     {isDone ? `✓ ${label.split(' ')[1]}` : label}
