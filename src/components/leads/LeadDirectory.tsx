@@ -68,19 +68,31 @@ export const LeadDirectory: React.FC<LeadDirectoryProps> = ({ onOpenSendMail }) 
 
   // Custom Manual Add Modal
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
-  const [newLeadData, setNewLeadData] = useState<Partial<Lead>>({
-    name: '',
-    title: 'Founder & CEO',
-    company: '',
-    email: '',
-    phone: '',
-    website: '',
-    niche: 'B2B SaaS & Tech',
-    location: 'United States',
-    status: 'new',
-    icebreaker: '',
-    tags: leadTags[0]?.name ? [leadTags[0].name] : []
+  const [newLeadData, setNewLeadData] = useState<Partial<Lead>>(() => {
+    try {
+      const saved = sessionStorage.getItem('visualsky_lead_draft');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      name: '',
+      title: 'Founder & CEO',
+      company: '',
+      email: '',
+      phone: '',
+      website: '',
+      niche: 'B2B SaaS & Tech',
+      location: 'United States',
+      status: 'new',
+      icebreaker: '',
+      tags: leadTags[0]?.name ? [leadTags[0].name] : []
+    };
   });
+
+  useEffect(() => {
+    if (newLeadData && (newLeadData.name || newLeadData.email || newLeadData.company)) {
+      sessionStorage.setItem('visualsky_lead_draft', JSON.stringify(newLeadData));
+    }
+  }, [newLeadData]);
 
   // File Upload Modal
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
@@ -212,6 +224,7 @@ export const LeadDirectory: React.FC<LeadDirectoryProps> = ({ onOpenSendMail }) 
     }], newLeadData.tags?.[0]);
 
     setShowAddModal(false);
+    sessionStorage.removeItem('visualsky_lead_draft');
     setNewLeadData({
       name: '',
       title: 'Founder & CEO',

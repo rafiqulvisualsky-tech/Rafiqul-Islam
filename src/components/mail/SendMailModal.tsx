@@ -40,15 +40,25 @@ export const SendMailModal: React.FC<SendMailModalProps> = ({
 }) => {
   const { leads, smtpAccounts, currentUser, addNotification, sendDirectEmail, emailTemplates } = useApp();
 
-  const [recipientEmail, setRecipientEmail] = useState<string>(defaultRecipientEmail);
-  const [recipientName, setRecipientName] = useState<string>(defaultRecipientName);
-  const [selectedSmtpId, setSelectedSmtpId] = useState<string>(smtpAccounts[0]?.id || '');
+  const [recipientEmail, setRecipientEmail] = useState<string>(() => {
+    return defaultRecipientEmail || sessionStorage.getItem('visualsky_sendmail_draft_email') || '';
+  });
+  const [recipientName, setRecipientName] = useState<string>(() => {
+    return defaultRecipientName || sessionStorage.getItem('visualsky_sendmail_draft_name') || '';
+  });
+  const [selectedSmtpId, setSelectedSmtpId] = useState<string>(() => {
+    return sessionStorage.getItem('visualsky_sendmail_draft_smtpid') || smtpAccounts[0]?.id || '';
+  });
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   
   const availableTemplates = emailTemplates && emailTemplates.length > 0 ? emailTemplates : INITIAL_TEMPLATES;
   
-  const [subject, setSubject] = useState<string>('');
-  const [body, setBody] = useState<string>('');
+  const [subject, setSubject] = useState<string>(() => {
+    return sessionStorage.getItem('visualsky_sendmail_draft_subject') || '';
+  });
+  const [body, setBody] = useState<string>(() => {
+    return sessionStorage.getItem('visualsky_sendmail_draft_body') || '';
+  });
 
   const [sendMode, setSendMode] = useState<'instant' | 'scheduled'>('instant');
   const [scheduledDateTime, setScheduledDateTime] = useState<string>('2026-08-17T09:30');
@@ -56,6 +66,23 @@ export const SendMailModal: React.FC<SendMailModalProps> = ({
   const [includeSignature, setIncludeSignature] = useState<boolean>(true);
   const [isSending, setIsSending] = useState<boolean>(false);
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
+
+  // Sync draft fields to sessionStorage
+  useEffect(() => {
+    if (recipientEmail) sessionStorage.setItem('visualsky_sendmail_draft_email', recipientEmail);
+    if (recipientName) sessionStorage.setItem('visualsky_sendmail_draft_name', recipientName);
+    if (selectedSmtpId) sessionStorage.setItem('visualsky_sendmail_draft_smtpid', selectedSmtpId);
+    if (subject) sessionStorage.setItem('visualsky_sendmail_draft_subject', subject);
+    if (body) sessionStorage.setItem('visualsky_sendmail_draft_body', body);
+  }, [recipientEmail, recipientName, selectedSmtpId, subject, body]);
+
+  const clearDraft = () => {
+    sessionStorage.removeItem('visualsky_sendmail_draft_email');
+    sessionStorage.removeItem('visualsky_sendmail_draft_name');
+    sessionStorage.removeItem('visualsky_sendmail_draft_smtpid');
+    sessionStorage.removeItem('visualsky_sendmail_draft_subject');
+    sessionStorage.removeItem('visualsky_sendmail_draft_body');
+  };
 
   // AI Assistant State
   const [showAiAssistant, setShowAiAssistant] = useState<boolean>(true);
@@ -199,6 +226,7 @@ export const SendMailModal: React.FC<SendMailModalProps> = ({
 
     setTimeout(() => {
       setIsSuccess(false);
+      clearDraft();
       onClose();
     }, 1200);
   };

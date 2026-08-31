@@ -340,8 +340,15 @@ const INITIAL_USERS: UserAccount[] = [
 ];
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Navigation
-  const [activeTab, setActiveTabState] = useState<string>('dashboard');
+  // Navigation with persistent active tab restoration
+  const [activeTab, setActiveTabState] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('visualsky_active_tab');
+      return saved || 'dashboard';
+    } catch {
+      return 'dashboard';
+    }
+  });
   const [activeFollowUpCohort, setActiveFollowUpCohort] = useState<'7d' | '14d' | '30d' | null>(null);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -349,6 +356,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const openFollowUpCohortModal = (cohort: '7d' | '14d' | '30d') => {
     setActiveFollowUpCohort(cohort);
     setActiveTabState('campaigns');
+    try { localStorage.setItem('visualsky_active_tab', 'campaigns'); } catch {}
   };
 
   // Current User & All Users
@@ -403,10 +411,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem('visualsky_authenticated', 'true');
       localStorage.setItem('visualsky_current_user', JSON.stringify(user));
     } catch {}
-    if (isAgencyUser(user)) {
+    
+    // Check if user had a previously saved tab
+    const savedTab = localStorage.getItem('visualsky_active_tab');
+    if (savedTab && (savedTab !== 'owner' || isAgencyUser(user))) {
+      setActiveTabState(savedTab);
+    } else if (isAgencyUser(user)) {
       setActiveTabState('owner');
+      try { localStorage.setItem('visualsky_active_tab', 'owner'); } catch {}
     } else {
       setActiveTabState('dashboard');
+      try { localStorage.setItem('visualsky_active_tab', 'dashboard'); } catch {}
     }
     // Cross-browser sync: immediately load server workspace
     loadUserWorkspace(user.email);
@@ -416,15 +431,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // If client tries to access agency master/owner panel, redirect to dashboard
     if (tab === 'owner' && !isAgencyUser(currentUser)) {
       setActiveTabState('dashboard');
+      try { localStorage.setItem('visualsky_active_tab', 'dashboard'); } catch {}
       return;
     }
     setActiveTabState(tab);
+    try { localStorage.setItem('visualsky_active_tab', tab); } catch {}
   };
 
   const setCurrentUser = (user: UserAccount) => {
     setCurrentUserState(user);
     if (!isAgencyUser(user) && activeTab === 'owner') {
       setActiveTabState('dashboard');
+      try { localStorage.setItem('visualsky_active_tab', 'dashboard'); } catch {}
     }
   };
 
@@ -432,7 +450,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     if (!supabase) return;
 
-    // Check existing session
+    // Check existing session on initial load
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         const metadata = session.user.user_metadata || {};
@@ -473,9 +491,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           isOwner: isAgency,
           plan: metadata.plan || (isAgency ? 'Enterprise' : 'Pro'),
           bdtPlanLabel: metadata.bdt_plan_label || (isAgency ? 'Agency Master (Free Unlimited)' : 'Scale Business (BDT 4,999/mo)'),
-          quotaUsed: 0,
-          quotaLimit: isAgency ? 50000 : 5000,
-          aiCredits: isAgency ? 10000 : 2500,
+          quotaUsed: currentUser?.quotaUsed || 0,
+          quotaLimit: currentUser?.quotaLimit || (isAgency ? 50000 : 5000),
+          aiCredits: currentUser?.aiCredits || (isAgency ? 10000 : 2500),
           company: metadata.company || (isAgency ? 'VisualSky Agency Platform' : 'Client Workspace'),
           title: metadata.title || (isAgency ? 'Agency Principal' : 'Client Member'),
           phone: metadata.phone || '',
@@ -488,6 +506,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsAuthenticatedState(true);
         try {
           localStorage.setItem('visualsky_authenticated', 'true');
+          localStorage.setItem('visualsky_current_user', JSON.stringify(syncedUser));
         } catch {}
         setAllUsers(prev => {
           const exists = prev.some(u => u.email.toLowerCase() === syncedUser.email.toLowerCase() || u.id === syncedUser.id);
@@ -499,11 +518,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // Load persisted workspace from server
         loadUserWorkspace(syncedUser.email);
+
+        // Respect existing saved active tab
+        const savedTab = localStorage.getItem('visualsky_active_tab');
+        if (savedTab && (savedTab !== 'owner' || isAgency)) {
+          setActiveTabState(savedTab);
+        }
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setIsAuthenticatedState(false);
+        try {
+          localStorage.removeItem('visualsky_authenticated');
+          localStorage.removeItem('visualsky_current_user');
+        } catch {}
+        return;
+      }
+
       if (session?.user) {
+        // Tab-switching / visibility change / token refresh guard:
+        // If user is already authenticated with the same user ID/email, do NOT force-reset the tab or wipe user state
+        const storedAuth = localStorage.getItem('visualsky_authenticated') === 'true';
+        const storedUser = localStorage.getItem('visualsky_current_user');
+        let parsedStoredEmail = '';
+        try {
+          if (storedUser) parsedStoredEmail = JSON.parse(storedUser)?.email || '';
+        } catch {}
+
+        const isSameActiveSession = storedAuth && parsedStoredEmail.toLowerCase() === session.user.email?.toLowerCase();
+        if (event === 'TOKEN_REFRESHED' || (event === 'INITIAL_SESSION' && isSameActiveSession)) {
+          // Token refresh or background tab reactivation - keep current tab and modal state strictly intact
+          return;
+        }
+
         const metadata = session.user.user_metadata || {};
         const pendingRole = localStorage.getItem('visualsky_pending_oauth_role') as ('client' | 'agency' | null);
         if (pendingRole) {
@@ -542,9 +591,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           isOwner: isAgency,
           plan: metadata.plan || (isAgency ? 'Enterprise' : 'Pro'),
           bdtPlanLabel: metadata.bdt_plan_label || (isAgency ? 'Agency Master (Free Unlimited)' : 'Scale Business (BDT 4,999/mo)'),
-          quotaUsed: 0,
-          quotaLimit: isAgency ? 50000 : 5000,
-          aiCredits: isAgency ? 10000 : 2500,
+          quotaUsed: currentUser?.quotaUsed || 0,
+          quotaLimit: currentUser?.quotaLimit || (isAgency ? 50000 : 5000),
+          aiCredits: currentUser?.aiCredits || (isAgency ? 10000 : 2500),
           company: metadata.company || (isAgency ? 'VisualSky Agency Platform' : 'Client Workspace'),
           title: metadata.title || (isAgency ? 'Agency Principal' : 'Client Member'),
           phone: metadata.phone || '',
@@ -557,6 +606,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsAuthenticatedState(true);
         try {
           localStorage.setItem('visualsky_authenticated', 'true');
+          localStorage.setItem('visualsky_current_user', JSON.stringify(syncedUser));
         } catch {}
         setAllUsers(prev => {
           const exists = prev.some(u => u.email.toLowerCase() === syncedUser.email.toLowerCase() || u.id === syncedUser.id);
@@ -569,11 +619,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Load persisted workspace from server
         loadUserWorkspace(syncedUser.email);
 
-        // Auto-redirect to appropriate dashboard
-        if (isAgency) {
+        // Keep existing active tab if already set or saved, otherwise set default
+        const savedTab = localStorage.getItem('visualsky_active_tab');
+        if (savedTab && (savedTab !== 'owner' || isAgency)) {
+          setActiveTabState(savedTab);
+        } else if (isAgency) {
           setActiveTabState('owner');
+          try { localStorage.setItem('visualsky_active_tab', 'owner'); } catch {}
         } else {
           setActiveTabState('dashboard');
+          try { localStorage.setItem('visualsky_active_tab', 'dashboard'); } catch {}
         }
       }
     });
