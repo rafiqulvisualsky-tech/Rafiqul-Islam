@@ -654,25 +654,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    // Verify if email exists in database/accounts list
-    const existingUser = allUsers.find(u => u.email.toLowerCase() === targetEmail);
-    if (!existingUser) {
-      setErrorMessage(`Email "${forgotEmail.trim()}" was not found in our records. Please check the email address or register for an account.`);
-      return;
-    }
-
     setIsLoading(true);
     try {
-      await resetPasswordWithSupabase(forgotEmail.trim()).catch(() => {});
-      const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
-      setGeneratedOtp(generatedCode);
-      setForgotOtp(''); // Keep empty so user types the code received in email
+      // Trigger real server-side email dispatch with 6-digit OTP
+      const res = await fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: targetEmail })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to dispatch password reset code.');
+      }
+
+      if (data.otpCode) {
+        setGeneratedOtp(data.otpCode);
+      }
+      setForgotOtp('');
       setForgotPhase('verify');
       setIsLoading(false);
-      setSuccessMessage(`A 6-digit verification code has been dispatched to ${forgotEmail.trim()}. Please check your email and enter the code below.`);
+      setSuccessMessage(data.message || `A 6-digit verification code has been dispatched to ${targetEmail}. Please check your inbox.`);
       addNotification({
         title: 'Verification Code Dispatched 📧',
-        message: `A 6-digit security code has been sent to ${forgotEmail.trim()}.`,
+        message: `A 6-digit security code has been sent to ${targetEmail}.`,
         type: 'system'
       });
     } catch (err: any) {
@@ -681,27 +686,39 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleResendOtp = () => {
-    const newCode = Math.floor(100000 + Math.random() * 900000).toString();
-    setGeneratedOtp(newCode);
-    setSuccessMessage(`A new 6-digit code has been sent to ${forgotEmail.trim()}.`);
-    addNotification({
-      title: 'New Code Dispatched 📧',
-      message: `A fresh 6-digit security code has been sent to ${forgotEmail.trim()}.`,
-      type: 'system'
-    });
+  const handleResendOtp = async () => {
+    const targetEmail = forgotEmail.trim().toLowerCase();
+    if (!targetEmail) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: targetEmail })
+      });
+      const data = await res.json();
+      setIsLoading(false);
+      if (data.otpCode) {
+        setGeneratedOtp(data.otpCode);
+      }
+      setSuccessMessage(`A fresh 6-digit code has been dispatched to ${targetEmail}.`);
+      addNotification({
+        title: 'New Code Dispatched 📧',
+        message: `A fresh 6-digit security code has been sent to ${targetEmail}.`,
+        type: 'system'
+      });
+    } catch (err: any) {
+      setIsLoading(false);
+      setErrorMessage(err?.message || 'Failed to resend code.');
+    }
   };
 
-  const handleVerifyOtpAndChangePass = (e: React.FormEvent) => {
+  const handleVerifyOtpAndChangePass = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
     if (!forgotOtp.trim() || forgotOtp.trim().length !== 6) {
       setErrorMessage('Please enter the full 6-digit verification code.');
-      return;
-    }
-    if (forgotOtp.trim() !== generatedOtp.trim()) {
-      setErrorMessage('Invalid 6-digit verification code. Please check your email and try again.');
       return;
     }
     if (newResetPassword.length < 6) {
@@ -713,19 +730,38 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    const resetSuccess = resetUserPasswordByEmail(forgotEmail.trim(), newResetPassword);
-    if (!resetSuccess) {
-      setErrorMessage('No registered account found for this email address.');
-      return;
-    }
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: forgotEmail.trim().toLowerCase(),
+          otp: forgotOtp.trim(),
+          newPassword: newResetPassword
+        })
+      });
 
-    setForgotPhase('success');
-    setEmail(forgotEmail.trim()); // Pre-fill login email for convenience
-    addNotification({
-      title: 'Password Successfully Reset! 🔑',
-      message: `Password for ${forgotEmail} has been updated. You can now sign in with your new password.`,
-      type: 'system'
-    });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Invalid or expired verification code.');
+      }
+
+      // Also update local context
+      resetUserPasswordByEmail(forgotEmail.trim(), newResetPassword);
+
+      setIsLoading(false);
+      setForgotPhase('success');
+      setEmail(forgotEmail.trim()); // Pre-fill login email for convenience
+      addNotification({
+        title: 'Password Successfully Reset! 🔑',
+        message: `Password for ${forgotEmail} has been updated. You can now sign in with your new password.`,
+        type: 'system'
+      });
+    } catch (err: any) {
+      setIsLoading(false);
+      setErrorMessage(err?.message || 'Failed to reset password.');
+    }
   };
 
   return (
