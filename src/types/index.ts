@@ -138,13 +138,14 @@ export interface SMTPScheduleSettings {
 export interface SMTPAccount {
   id: string;
   name: string;
-  provider: 'domain_webmail' | 'gmail' | 'outlook' | 'ses' | 'sendgrid' | 'mailgun' | 'zoho' | 'hostinger' | 'custom';
+  provider: 'resend' | 'brevo' | 'domain_webmail' | 'gmail' | 'outlook' | 'ses' | 'sendgrid' | 'mailgun' | 'zoho' | 'hostinger' | 'custom';
   host: string;
   port: number;
   encryption: 'STARTTLS' | 'SSL' | 'TLS' | 'NONE';
   username: string;
   fromName: string;
   fromEmail?: string;
+  apiKey?: string;
   domainWebmailUrl?: string; // e.g., https://webmail.yourdomain.com
   dailyLimit: number;
   sentToday: number;
@@ -285,13 +286,14 @@ export interface SentEmailLog {
   smtpAccountName: string;
   smtpHost: string;
   sentAt: string;
-  status: 'sent' | 'opened' | 'replied' | 'failed';
+  status: 'sent' | 'opened' | 'replied' | 'failed' | 'bounced';
+  errorMessage?: string;
   openCount: number;
   firstOpenedAt?: string;
   repliedAt?: string;
   ipAddress?: string;
   userAgent?: string;
-  trackingPixelId: string;
+  trackingPixelId?: string;
   isTrash?: boolean;
   deletedAt?: string;
 }

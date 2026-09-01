@@ -76,7 +76,8 @@ export const SMTPManager: React.FC = () => {
       });
       const data = await res.json();
 
-      if (data.success) {
+      if (res.ok && data.success) {
+        updateSMTPAccount(account.id, { isConnected: true, healthScore: 99 });
         setTestLogs(data.logs || [
           `[DNS] MX, SPF, DKIM alignment OK for ${account.host}`,
           `[AUTH] Authenticated as ${account.username}`,
@@ -85,17 +86,18 @@ export const SMTPManager: React.FC = () => {
         ]);
         confetti({ particleCount: 30, spread: 60 });
       } else {
+        updateSMTPAccount(account.id, { isConnected: false, healthScore: 0 });
         setTestLogs(prev => [
           ...prev,
-          `[ERROR] Handshake failed: ${data.error || 'Check username and credentials'}`
+          `[ERROR] Handshake failed: ${data.error || 'Check username and credentials'}`,
+          `[HINT] Check port, SSL/TLS, and credentials.`
         ]);
       }
-    } catch {
-      await testSMTPConnection(account.id);
-      setTestLogs([
-        `[CONNECT] Connected to ${account.host}:${account.port}`,
-        `[AUTH] Authenticated as ${account.username}`,
-        `[STATUS] Ready for outbound campaigns.`
+    } catch (err: any) {
+      updateSMTPAccount(account.id, { isConnected: false, healthScore: 0 });
+      setTestLogs(prev => [
+        ...prev,
+        `[ERROR] Network error: ${err?.message || 'Unable to connect to server'}`
       ]);
     } finally {
       setTestingId(null);

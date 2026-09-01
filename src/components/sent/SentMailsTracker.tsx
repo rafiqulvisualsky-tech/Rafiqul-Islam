@@ -48,7 +48,7 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'opened' | 'replied' | 'sent'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'opened' | 'replied' | 'sent' | 'failed'>('all');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [selectedMail, setSelectedMail] = useState<SentEmailLog | null>(null);
   const [isCopiedId, setIsCopiedId] = useState<string | null>(null);
@@ -66,14 +66,16 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
         (mail.recipientCompany || '').toLowerCase().includes(q) ||
         (mail.subject || '').toLowerCase().includes(q) ||
         (mail.smtpAccountName || '').toLowerCase().includes(q) ||
-        (mail.campaignName || '').toLowerCase().includes(q)
+        (mail.campaignName || '').toLowerCase().includes(q) ||
+        (mail.errorMessage || '').toLowerCase().includes(q)
       );
 
       if (!matchesSearch) return false;
 
-      if (statusFilter === 'opened') return mail.status === 'opened' || mail.openCount > 0;
+      if (statusFilter === 'opened') return mail.status === 'opened' || (mail.openCount || 0) > 0;
       if (statusFilter === 'replied') return mail.status === 'replied';
       if (statusFilter === 'sent') return mail.status === 'sent';
+      if (statusFilter === 'failed') return mail.status === 'failed';
 
       return true;
     });
@@ -81,10 +83,12 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
 
   // Aggregate Metrics
   const totalCount = activeSentEmails.length;
-  const openedCount = activeSentEmails.filter(m => m.status === 'opened' || m.openCount > 0 || m.status === 'replied').length;
+  const successfulCount = activeSentEmails.filter(m => m.status !== 'failed').length;
+  const failedCount = activeSentEmails.filter(m => m.status === 'failed').length;
+  const openedCount = activeSentEmails.filter(m => m.status === 'opened' || (m.openCount || 0) > 0 || m.status === 'replied').length;
   const repliedCount = activeSentEmails.filter(m => m.status === 'replied').length;
-  const openRatePercent = totalCount > 0 ? ((openedCount / totalCount) * 100).toFixed(1) : '0';
-  const replyRatePercent = totalCount > 0 ? ((repliedCount / totalCount) * 100).toFixed(1) : '0';
+  const openRatePercent = successfulCount > 0 ? ((openedCount / successfulCount) * 100).toFixed(1) : '0';
+  const replyRatePercent = successfulCount > 0 ? ((repliedCount / successfulCount) * 100).toFixed(1) : '0';
 
   // Export CSV
   const handleExportCSV = () => {
@@ -173,7 +177,9 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
           <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
             <div className="text-xs text-slate-400 font-medium">Total Emails Dispatched</div>
             <div className="text-2xl font-black text-slate-100">{totalCount}</div>
-            <div className="text-[10px] text-emerald-400 font-bold">100% Delivery Confirmation</div>
+            <div className={`text-[10px] font-bold ${failedCount > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+              {failedCount > 0 ? `${successfulCount} sent, ${failedCount} failed` : '100% Delivery Confirmation'}
+            </div>
           </div>
 
           <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
@@ -190,7 +196,9 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
 
           <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
             <div className="text-xs text-slate-400 font-medium">Delivery Engine Health</div>
-            <div className="text-2xl font-black text-purple-400">99.8%</div>
+            <div className="text-2xl font-black text-purple-400">
+              {failedCount > 0 && totalCount > 0 ? `${((successfulCount / totalCount) * 100).toFixed(0)}%` : '99.8%'}
+            </div>
             <div className="text-[10px] text-purple-300 font-bold">SPF/DKIM 2048-bit</div>
           </div>
         </div>
@@ -246,6 +254,7 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
                 { id: 'opened', label: '👁️ Opened' },
                 { id: 'replied', label: '💬 Replied' },
                 { id: 'sent', label: '✓ Sent' },
+                { id: 'failed', label: '❌ Failed' },
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -340,20 +349,34 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
                         <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
                           mail.status === 'replied'
                             ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                            : mail.status === 'opened' || mail.openCount > 0
+                            : mail.status === 'opened' || (mail.openCount || 0) > 0
                             ? 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+                            : mail.status === 'failed'
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                            : mail.status === 'bounced'
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
                             : 'bg-slate-800 text-slate-300 border-slate-700'
                         }`}>
-                          {mail.status === 'replied' ? '💬 Replied' : mail.openCount > 0 ? '👁️ Opened' : '✓ Delivered'}
+                          {mail.status === 'replied'
+                            ? '💬 Replied'
+                            : (mail.openCount || 0) > 0
+                            ? '👁️ Opened'
+                            : mail.status === 'failed'
+                            ? '❌ Failed'
+                            : mail.status === 'bounced'
+                            ? '⚠️ Bounced'
+                            : '✓ Sent'}
                         </span>
                       </td>
 
                       {/* Open Count */}
                       <td className="p-3.5 font-mono text-slate-300 font-bold text-center whitespace-nowrap">
-                        {mail.openCount > 0 ? (
+                        {(mail.openCount || 0) > 0 ? (
                           <span className="text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">
                             {mail.openCount}
                           </span>
+                        ) : mail.status === 'failed' ? (
+                          <span className="text-rose-500 text-[11px]">ERR</span>
                         ) : (
                           <span className="text-slate-600">0</span>
                         )}
@@ -411,11 +434,23 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
                     <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
                       mail.status === 'replied'
                         ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                        : mail.status === 'opened' || mail.openCount > 0
+                        : mail.status === 'opened' || (mail.openCount || 0) > 0
                         ? 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+                        : mail.status === 'failed'
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                        : mail.status === 'bounced'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
                         : 'bg-slate-800 text-slate-300 border-slate-700'
                     }`}>
-                      {mail.status === 'replied' ? '💬 Replied' : mail.openCount > 0 ? `👁️ Opened (${mail.openCount})` : '✓ Delivered'}
+                      {mail.status === 'replied'
+                        ? '💬 Replied'
+                        : (mail.openCount || 0) > 0
+                        ? `👁️ Opened (${mail.openCount})`
+                        : mail.status === 'failed'
+                        ? '❌ Failed'
+                        : mail.status === 'bounced'
+                        ? '⚠️ Bounced'
+                        : '✓ Sent'}
                     </span>
                   </div>
 
@@ -431,6 +466,13 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
                     <div className="text-[10px] uppercase font-bold text-slate-500">Subject</div>
                     <p className="text-xs font-semibold text-slate-200 truncate mt-0.5">{mail.subject}</p>
                   </div>
+
+                  {/* Error Callout if Failed */}
+                  {mail.status === 'failed' && mail.errorMessage && (
+                    <div className="mt-2 p-2 rounded-lg bg-rose-950/40 border border-rose-900/60 text-[11px] text-rose-300 font-mono break-words">
+                      ❌ {mail.errorMessage}
+                    </div>
+                  )}
 
                   {/* Body Preview snippet */}
                   <p className="text-[11px] text-slate-400 line-clamp-2 mt-2 font-mono leading-relaxed">
@@ -519,11 +561,38 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
               </div>
               <div>
                 <span className="text-slate-500 text-[10px] block">Tracking Status:</span>
-                <span className="font-bold text-emerald-400">
-                  {selectedMail.openCount > 0 ? `✓ Opened (${selectedMail.openCount} times)` : '✓ Sent & Delivered'}
+                <span className={`font-bold ${
+                  selectedMail.status === 'replied'
+                    ? 'text-emerald-400'
+                    : (selectedMail.openCount || 0) > 0
+                    ? 'text-cyan-400'
+                    : selectedMail.status === 'failed'
+                    ? 'text-rose-400'
+                    : 'text-slate-200'
+                }`}>
+                  {selectedMail.status === 'replied'
+                    ? `✓ Replied (${selectedMail.repliedAt ? new Date(selectedMail.repliedAt).toLocaleTimeString() : 'Verified'})`
+                    : (selectedMail.openCount || 0) > 0
+                    ? `✓ Opened (${selectedMail.openCount} times)`
+                    : selectedMail.status === 'failed'
+                    ? '❌ Failed to Deliver'
+                    : '✓ Sent'}
                 </span>
               </div>
             </div>
+
+            {/* Error message banner if failed */}
+            {selectedMail.status === 'failed' && selectedMail.errorMessage && (
+              <div className="p-3 bg-rose-950/60 border border-rose-900 rounded-2xl space-y-1">
+                <div className="text-[11px] font-bold text-rose-300 flex items-center gap-1.5">
+                  <X className="w-3.5 h-3.5 text-rose-400" />
+                  <span>SMTP Delivery Failure Reason</span>
+                </div>
+                <p className="text-xs text-rose-200 font-mono break-words leading-relaxed">
+                  {selectedMail.errorMessage}
+                </p>
+              </div>
+            )}
 
             {/* Email Subject & Body Preview */}
             <div className="space-y-2">

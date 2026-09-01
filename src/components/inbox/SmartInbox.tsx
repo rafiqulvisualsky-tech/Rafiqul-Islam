@@ -70,8 +70,48 @@ export const SmartInbox: React.FC = () => {
     emailTemplates,
     smtpAccounts,
     sendDirectEmail,
-    addNotification
+    addNotification,
+    syncInboxReplies
   } = useApp();
+
+  const [isSyncingImap, setIsSyncingImap] = useState<boolean>(false);
+
+  const handleManualImapSync = async () => {
+    setIsSyncingImap(true);
+    try {
+      const result = await syncInboxReplies();
+      if (result.success) {
+        if (result.count > 0) {
+          confetti({ particleCount: 40, spread: 60 });
+          addNotification({
+            title: '🎉 New Replies Synced!',
+            message: `Fetched ${result.count} new reply from your IMAP inbox.`,
+            type: 'lead'
+          });
+        } else {
+          addNotification({
+            title: 'IMAP Inbox Up-to-Date',
+            message: `Checked ${result.totalChecked} messages. No new prospect replies detected.`,
+            type: 'system'
+          });
+        }
+      } else {
+        addNotification({
+          title: 'IMAP Sync Failed',
+          message: result.error || 'Could not connect to mail server. Verify your credentials in SMTP settings.',
+          type: 'smtp'
+        });
+      }
+    } catch (err: any) {
+      addNotification({
+        title: 'IMAP Sync Error',
+        message: err?.message || 'Failed to connect to inbox server.',
+        type: 'smtp'
+      });
+    } finally {
+      setIsSyncingImap(false);
+    }
+  };
 
   // Gmail folder selection
   const [selectedFolder, setSelectedFolder] = useState<'inbox' | 'starred' | 'snoozed' | 'sent' | 'drafts' | 'spam' | 'trash' | 'high_intent' | 'meetings'>('inbox');
@@ -359,6 +399,18 @@ export const SmartInbox: React.FC = () => {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+          {/* Real-time IMAP Sync Button */}
+          <button
+            type="button"
+            onClick={handleManualImapSync}
+            disabled={isSyncingImap}
+            className="px-3.5 py-2 rounded-2xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer disabled:opacity-60 shadow-md"
+            title="Fetch and sync replies directly from your SMTP/IMAP mailbox"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${isSyncingImap ? 'animate-spin' : ''}`} />
+            <span>{isSyncingImap ? 'Checking IMAP...' : 'Sync Mailbox'}</span>
+          </button>
+
           {selectedThreadIds.length > 0 ? (
             <div className="flex items-center gap-2 animate-in fade-in">
               <span className="text-xs font-bold text-cyan-300 bg-cyan-950 px-2.5 py-1 rounded-lg border border-cyan-800">

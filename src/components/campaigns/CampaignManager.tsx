@@ -896,61 +896,108 @@ export const CampaignManager: React.FC = () => {
         .replace(/\{\{title\}\}/gi, lead.title || 'Executive');
 
       // Send via real backend SMTP relay route
+      const trackingPixelId = `px-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      let isSentSuccess = false;
+      let sendErrorMessage = '';
+
       try {
-        await fetch('/api/smtp/send', {
+        const res = await fetch('/api/smtp/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             to: lead.email,
             toName: lead.name,
-            from: smtp?.username || 'outreach@visualsky.io',
+            from: smtp?.fromEmail || smtp?.username || 'outreach@visualsky.io',
             fromName: senderName || smtp?.fromName || 'Visual Sky Outreach',
             subject: renderedSubject,
             text: renderedBody,
-            smtpConfig: smtp
+            smtpConfig: smtp,
+            trackingPixelId
           })
         });
-      } catch (err) {
-        console.warn('Live transmission simulation fallback:', err);
+        const data = await res.json();
+        if (res.ok && data.success) {
+          isSentSuccess = true;
+        } else {
+          isSentSuccess = false;
+          sendErrorMessage = data.error || `HTTP error ${res.status}`;
+        }
+      } catch (err: any) {
+        isSentSuccess = false;
+        sendErrorMessage = err?.message || 'Network error connecting to SMTP relay';
       }
 
-      sentSoFar++;
+      if (isSentSuccess) {
+        sentSoFar++;
 
-      // Record in sent log
-      addSentEmailLog({
-        campaignId: targetCampaign.id,
-        campaignName: targetCampaign.name,
-        recipientName: lead.name,
-        recipientEmail: lead.email,
-        recipientCompany: lead.company,
-        subject: renderedSubject,
-        body: renderedBody,
-        smtpAccountName: smtp?.name || 'SMTP Relay',
-        smtpHost: `${smtp?.host || 'smtp.relay'}:${smtp?.port || 587}`,
-        status: 'sent',
-        openCount: 0
-      });
+        // Record in sent log
+        addSentEmailLog({
+          campaignId: targetCampaign.id,
+          campaignName: targetCampaign.name,
+          recipientName: lead.name,
+          recipientEmail: lead.email,
+          recipientCompany: lead.company,
+          subject: renderedSubject,
+          body: renderedBody,
+          smtpAccountName: smtp?.name || 'SMTP Relay',
+          smtpHost: `${smtp?.host || 'smtp.relay'}:${smtp?.port || 587}`,
+          status: 'sent',
+          openCount: 0,
+          trackingPixelId
+        });
 
-      // Update lead
-      updateLead(lead.id, {
-        status: 'contacted',
-        daysAgo: 0,
-        lastActivityDate: new Date().toISOString(),
-        sentCampaigns: Array.from(new Set([...lead.sentCampaigns, targetCampaign.name]))
-      });
+        // Update lead
+        updateLead(lead.id, {
+          status: 'contacted',
+          daysAgo: 0,
+          lastActivityDate: new Date().toISOString(),
+          sentCampaigns: Array.from(new Set([...lead.sentCampaigns, targetCampaign.name]))
+        });
 
-      // Update campaign stats
-      updateCampaign(targetCampaign.id, {
-        sentCount: sentSoFar
-      });
+        // Update campaign stats
+        updateCampaign(targetCampaign.id, {
+          sentCount: sentSoFar
+        });
 
-      setDispatchProgress(prev => ({
-        ...prev,
-        sentLogs: [
-          `[DELIVERED] ✓ Dispatched to ${lead.name} (${lead.email}) via ${smtp?.name || 'Relay'} at ${new Date().toLocaleTimeString()}`,
-          ...prev.sentLogs
-        ]
-      }));
+        setDispatchProgress(prev => ({
+          ...prev,
+          sentLogs: [
+            `[DELIVERED] ✓ Dispatched to ${lead.name} (${lead.email}) via ${smtp?.name || 'Relay'} at ${new Date().toLocaleTimeString()}`,
+            ...prev.sentLogs
+          ]
+        }));
+      } else {
+        // Record as failed transmission
+        addSentEmailLog({
+          campaignId: targetCampaign.id,
+          campaignName: targetCampaign.name,
+          recipientName: lead.name,
+          recipientEmail: lead.email,
+          recipientCompany: lead.company,
+          subject: renderedSubject,
+          body: renderedBody,
+          smtpAccountName: smtp?.name || 'SMTP Relay',
+          smtpHost: `${smtp?.host || 'smtp.relay'}:${smtp?.port || 587}`,
+          status: 'failed',
+          errorMessage: sendErrorMessage,
+          openCount: 0,
+          trackingPixelId
+        });
+
+        setDispatchProgress(prev => ({
+          ...prev,
+          sentLogs: [
+            `[FAILED] ✗ Could not send to ${lead.name} (${lead.email}): ${sendErrorMessage}`,
+            ...prev.sentLogs
+          ]
+        }));
+
+        addNotification({
+          title: `SMTP Relay Error: ${lead.name}`,
+          message: `Failed sending to ${lead.email}: ${sendErrorMessage}`,
+          type: 'smtp'
+        });
+      }
 
       // If not last lead and delay interval is configured, countdown!
       if (i < targetLeads.length - 1 && intervalSec > 0) {
