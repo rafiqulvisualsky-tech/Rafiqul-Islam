@@ -96,11 +96,18 @@ export const LeadDirectory: React.FC<LeadDirectoryProps> = ({ onOpenSendMail }) 
 
   // File Upload Modal
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
-  const [uploadSelectedTag, setUploadSelectedTag] = useState<string>(leadTags[0]?.name || '');
+  const [uploadSelectedTag, setUploadSelectedTag] = useState<string>(() => leadTags[0]?.name || 'Imported Leads');
   const [uploadedFileName, setUploadedFileName] = useState<string>('');
   const [parsedLeadsPreview, setParsedLeadsPreview] = useState<Partial<Lead>[]>([]);
   const [uploadError, setUploadError] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync default tag if tags array updates
+  useEffect(() => {
+    if ((!uploadSelectedTag || uploadSelectedTag === 'Imported Leads') && leadTags.length > 0) {
+      setUploadSelectedTag(leadTags[0].name);
+    }
+  }, [leadTags]);
 
   // Active Leads
   const activeLeads = useMemo(() => {
@@ -448,7 +455,12 @@ export const LeadDirectory: React.FC<LeadDirectoryProps> = ({ onOpenSendMail }) 
 
   const handleConfirmUpload = () => {
     if (parsedLeadsPreview.length === 0) return;
-    addLeads(parsedLeadsPreview, uploadSelectedTag);
+    const tagToAssign = uploadSelectedTag || leadTags[0]?.name || 'Imported Leads';
+    const leadsWithTag = parsedLeadsPreview.map(lead => ({
+      ...lead,
+      tags: [tagToAssign]
+    }));
+    addLeads(leadsWithTag, tagToAssign);
     setShowUploadModal(false);
     setParsedLeadsPreview([]);
     setUploadedFileName('');

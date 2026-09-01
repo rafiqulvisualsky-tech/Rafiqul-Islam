@@ -42,7 +42,18 @@ const DEFAULT_CATEGORIES: TemplateCategoryItem[] = [
 export const INITIAL_TEMPLATES: EmailTemplate[] = [];
 
 export const TemplateManager: React.FC = () => {
-  const { setActiveTab, addNotification, emailTemplates, setEmailTemplates } = useApp();
+  const { 
+    setActiveTab, 
+    addNotification, 
+    emailTemplates, 
+    setEmailTemplates,
+    templateCategories,
+    addTemplateCategory,
+    deleteTemplateCategory,
+    deleteEmailTemplate,
+    saveWorkspaceToDatabase,
+    syncStatus
+  } = useApp();
   
   // Use global emailTemplates as single source of truth (excluding trash)
   const activeEmailTemplates = useMemo(() => {
@@ -50,21 +61,23 @@ export const TemplateManager: React.FC = () => {
   }, [emailTemplates]);
 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [categories, setCategories] = useState<TemplateCategoryItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('visualsky_template_categories');
-      return saved ? JSON.parse(saved) : DEFAULT_CATEGORIES;
-    } catch {
-      return DEFAULT_CATEGORIES;
-    }
-  });
   const [showAddCatModal, setShowAddCatModal] = useState<boolean>(false);
   const [newCatLabel, setNewCatLabel] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeTemplate, setActiveTemplate] = useState<EmailTemplate | null>(() => activeEmailTemplates[0] || null);
   const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [templateToDelete, setTemplateToDelete] = useState<EmailTemplate | null>(null);
+
+  // Category Tabs including 'all'
+  const categoryTabs = useMemo(() => {
+    return [
+      { id: 'all', name: 'all', label: 'All Templates', color: 'slate' },
+      ...templateCategories
+    ];
+  }, [templateCategories]);
 
   // Keep activeTemplate synchronized
   useEffect(() => {
@@ -84,48 +97,37 @@ export const TemplateManager: React.FC = () => {
   // Edit / Create Form State
   const [editForm, setEditForm] = useState<Partial<EmailTemplate>>({});
 
-  const saveToStorage = (list: EmailTemplate[]) => {
-    setEmailTemplates(list);
-    localStorage.setItem('visualsky_templates', JSON.stringify(list));
-  };
-
-  const saveCategories = (catList: TemplateCategoryItem[]) => {
-    setCategories(catList);
-    localStorage.setItem('visualsky_template_categories', JSON.stringify(catList));
-  };
-
   const handleCreateCategory = (e: React.FormEvent) => {
     e.preventDefault();
     const label = newCatLabel.trim();
     if (!label) return;
     const name = label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-    if (categories.some(c => c.name === name)) {
+    if (templateCategories.some(c => c.name === name)) {
       setNewCatLabel('');
       setShowAddCatModal(false);
       return;
     }
-    const newCat: TemplateCategoryItem = {
-      id: `cat-${Date.now()}`,
+    addTemplateCategory({
       name,
       label,
+      color: 'cyan',
       isCustom: true
-    };
-    const updated = [newCat, ...categories];
-    saveCategories(updated);
+    });
     setSelectedCategory(name);
     setNewCatLabel('');
     setShowAddCatModal(false);
+    saveWorkspaceToDatabase();
   };
 
   const handleDeleteCategory = (catId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const targetCat = categories.find(c => c.id === catId);
+    const targetCat = templateCategories.find(c => c.id === catId);
     if (!targetCat) return;
-    const updated = categories.filter(c => c.id !== catId);
-    saveCategories(updated);
+    deleteTemplateCategory(catId);
     if (selectedCategory === targetCat.name) {
       setSelectedCategory('all');
     }
+    saveWorkspaceToDatabase();
   };
 
   const handleCopy = (t?: EmailTemplate) => {
@@ -138,7 +140,7 @@ export const TemplateManager: React.FC = () => {
   const handleStartCreate = () => {
     const newTmpl: Partial<EmailTemplate> = {
       title: 'New High-Deliverability Template',
-      category: 'custom',
+      category: templateCategories[0]?.name || 'cold_outreach',
       subject: 'Quick question for {{name}} at {{company}}',
       body: 'Hi {{name}},\n\nI was looking at {{website}} and wanted to reach out regarding...\n\nBest regards,',
       tags: ['Custom', 'Outreach'],
@@ -157,37 +159,47 @@ export const TemplateManager: React.FC = () => {
     setIsEditing(true);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     const title = editForm.title?.trim() || 'Custom Outreach Template';
     const subject = editForm.subject?.trim() || 'Quick question regarding {{company}}';
     const body = editForm.body?.trim() || 'Hi {{name}},\n\nReaching out regarding {{company}}.\n\nBest regards,';
-    const category = (editForm.category as any) || 'custom';
+    const category = (editForm.category as string) || templateCategories[0]?.name || 'cold_outreach';
     const tags = editForm.tags && editForm.tags.length > 0 ? editForm.tags : ['Custom', 'Outreach'];
+
+    setIsSaving(true);
+
+    let savedTemplate: EmailTemplate;
 
     if (editForm.id) {
       // Update existing
-      const updated = emailTemplates.map(t => t.id === editForm.id ? { 
-        ...t, 
+      savedTemplate = {
         ...editForm,
+        id: editForm.id,
         title,
         subject,
         body,
         category,
-        tags
-      } as EmailTemplate : t);
-      saveToStorage(updated);
-      const found = updated.find(t => t.id === editForm.id);
-      if (found) setActiveTemplate(found);
+        tags,
+        usageCount: editForm.usageCount || 0,
+        replyRatePercent: editForm.replyRatePercent || 0,
+        createdAt: editForm.createdAt || new Date().toISOString().split('T')[0],
+        isTrash: false
+      } as EmailTemplate;
+
+      const updated = emailTemplates.map(t => t.id === editForm.id ? savedTemplate : t);
+      setEmailTemplates(updated);
+      try { localStorage.setItem('visualsky_templates', JSON.stringify(updated)); } catch {}
+      setActiveTemplate(savedTemplate);
       addNotification({
-        title: `Template Saved 📝`,
-        message: `"${title}" has been saved successfully.`,
+        title: `Template Saved to Database 📝`,
+        message: `"${title}" has been updated and synchronized with your workspace.`,
         type: 'system',
         linkTab: 'templates'
       });
     } else {
       // Add new (prepended to top)
-      const created: EmailTemplate = {
-        id: `tmpl-${Date.now()}`,
+      savedTemplate = {
+        id: `tmpl-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         title,
         category,
         subject,
@@ -196,28 +208,37 @@ export const TemplateManager: React.FC = () => {
         isCustom: true,
         usageCount: 0,
         replyRatePercent: 0,
-        createdAt: new Date().toISOString().split('T')[0]
+        createdAt: new Date().toISOString().split('T')[0],
+        isTrash: false
       };
-      const updated = [created, ...emailTemplates];
-      saveToStorage(updated);
-      setActiveTemplate(created);
+      const updated = [savedTemplate, ...emailTemplates];
+      setEmailTemplates(updated);
+      try { localStorage.setItem('visualsky_templates', JSON.stringify(updated)); } catch {}
+      setActiveTemplate(savedTemplate);
       addNotification({
-        title: `New Template Created 📝`,
-        message: `"${created.title}" is saved and available across all campaigns & inbox.`,
+        title: `New Template Created & Saved 📝`,
+        message: `"${savedTemplate.title}" is saved and available across all campaigns & inbox.`,
         type: 'system',
         linkTab: 'templates'
       });
     }
+
+    // Guarantee immediate persistent save
+    await saveWorkspaceToDatabase();
+    setIsSaving(false);
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 3000);
     setIsEditing(false);
   };
 
   const handleDelete = (id?: string) => {
     if (!id) return;
-    const updated = emailTemplates.filter(t => t.id !== id);
-    saveToStorage(updated);
+    deleteEmailTemplate(id);
     if (activeTemplate?.id === id) {
-      setActiveTemplate(updated.length > 0 ? updated[0] : null);
+      const remaining = activeEmailTemplates.filter(t => t.id !== id);
+      setActiveTemplate(remaining.length > 0 ? remaining[0] : null);
     }
+    saveWorkspaceToDatabase();
   };
 
   // Anti-Spam Check on Active Template
@@ -267,7 +288,7 @@ export const TemplateManager: React.FC = () => {
       {/* Filter Tabs & Search Bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 flex-1">
-          {categories.map(cat => (
+          {categoryTabs.map(cat => (
             <div key={cat.id} className="relative group shrink-0">
               <button
                 onClick={() => setSelectedCategory(cat.name)}
@@ -278,7 +299,7 @@ export const TemplateManager: React.FC = () => {
                 }`}
               >
                 <span>{cat.label}</span>
-                {cat.isCustom && (
+                {'isCustom' in cat && (cat as any).isCustom && (
                   <button
                     type="button"
                     onClick={(e) => handleDeleteCategory(cat.id, e)}
@@ -411,9 +432,25 @@ export const TemplateManager: React.FC = () => {
                   </button>
                   <button
                     onClick={handleSaveEdit}
-                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold shadow-md shadow-blue-500/20"
+                    disabled={isSaving}
+                    className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-md shadow-blue-500/20 flex items-center gap-1.5 transition cursor-pointer"
                   >
-                    Save Template
+                    {isSaving ? (
+                      <>
+                        <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Saving to Cloud...</span>
+                      </>
+                    ) : savedSuccess ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-300" />
+                        <span>Saved to Database!</span>
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <span>Save Template</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -433,11 +470,11 @@ export const TemplateManager: React.FC = () => {
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Category</label>
                   <select
-                    value={editForm.category || 'custom'}
+                    value={editForm.category || templateCategories[0]?.name || 'cold_outreach'}
                     onChange={(e) => setEditForm({ ...editForm, category: e.target.value as any })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
                   >
-                    {categories.filter(c => c.name !== 'all').map(c => (
+                    {templateCategories.map(c => (
                       <option key={c.id} value={c.name}>{c.label}</option>
                     ))}
                   </select>

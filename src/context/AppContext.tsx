@@ -82,6 +82,7 @@ interface AppContextType {
 
   // Lead Directory
   leads: Lead[];
+  setLeads: React.Dispatch<React.SetStateAction<Lead[]>>;
   addLeads: (newLeads: Partial<Lead>[], targetTag?: string) => void;
   updateLead: (id: string, updates: Partial<Lead>) => void;
   deleteLeadToTrash: (id: string) => void;
@@ -94,6 +95,7 @@ interface AppContextType {
   
   // Lead Tag Management
   leadTags: LeadTag[];
+  setLeadTags: React.Dispatch<React.SetStateAction<LeadTag[]>>;
   addLeadTag: (tag: Omit<LeadTag, 'id' | 'createdAt'>) => LeadTag;
   updateLeadTag: (id: string, updates: Partial<LeadTag>) => void;
   deleteLeadTag: (id: string) => void;
@@ -105,6 +107,7 @@ interface AppContextType {
 
   // Inbox & Threads
   threads: EmailThread[];
+  setThreads: React.Dispatch<React.SetStateAction<EmailThread[]>>;
   activeThreadId: string | null;
   setActiveThreadId: (id: string | null) => void;
   sendReply: (threadId: string, replyBody: string) => void;
@@ -120,6 +123,7 @@ interface AppContextType {
 
   // Campaigns & Automated Sequences
   campaigns: Campaign[];
+  setCampaigns: React.Dispatch<React.SetStateAction<Campaign[]>>;
   createCampaign: (campaign: Omit<Campaign, 'id' | 'sentCount' | 'openCount' | 'replyCount' | 'bounceCount' | 'createdAt'>) => Campaign;
   updateCampaign: (id: string, updates: Partial<Campaign>) => void;
   toggleCampaignStatus: (id: string) => void;
@@ -133,7 +137,9 @@ interface AppContextType {
 
   // Templates & Categories
   emailTemplates: EmailTemplate[];
+  setEmailTemplates: React.Dispatch<React.SetStateAction<EmailTemplate[]>>;
   templateCategories: TemplateCategory[];
+  setTemplateCategories: React.Dispatch<React.SetStateAction<TemplateCategory[]>>;
   addTemplateCategory: (category: Omit<TemplateCategory, 'id'>) => TemplateCategory;
   deleteTemplateCategory: (id: string) => void;
   addEmailTemplate: (template: Omit<EmailTemplate, 'id' | 'usageCount' | 'replyRatePercent' | 'createdAt'>) => EmailTemplate;
@@ -144,6 +150,7 @@ interface AppContextType {
 
   // Outbound SMTP Relays
   smtpAccounts: SMTPAccount[];
+  setSmtpAccounts: React.Dispatch<React.SetStateAction<SMTPAccount[]>>;
   addSMTPAccount: (account: Omit<SMTPAccount, 'id' | 'sentToday' | 'healthScore' | 'isConnected' | 'isTrash'>) => SMTPAccount;
   updateSMTPAccount: (id: string, updates: Partial<SMTPAccount>) => void;
   deleteSMTPAccount: (id: string) => void;
@@ -153,6 +160,7 @@ interface AppContextType {
 
   // Sent Emails & Live Outbox Tracking
   sentEmails: SentEmailLog[];
+  setSentEmails: React.Dispatch<React.SetStateAction<SentEmailLog[]>>;
   addSentEmailLog: (log: Omit<SentEmailLog, 'id' | 'sentAt' | 'trackingPixelId'>) => SentEmailLog;
   clearSentEmails: () => void;
   deleteSentEmail: (id: string) => void;
@@ -194,6 +202,7 @@ interface AppContextType {
   
   // Cross-Browser Cloud Workspace Sync
   loadUserWorkspace: (userEmail: string) => Promise<void>;
+  saveWorkspaceToDatabase: () => Promise<boolean>;
   isWorkspaceLoading: boolean;
   syncStatus: 'synced' | 'syncing' | 'offline';
   
@@ -998,6 +1007,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     isAuthenticated
   ]);
 
+  // Direct manual / immediate workspace save to database
+  const saveWorkspaceToDatabase = async (): Promise<boolean> => {
+    if (!isAuthenticated || !currentUser?.email) return false;
+    const cleanEmail = currentUser.email.trim().toLowerCase();
+    setSyncStatus('syncing');
+
+    try {
+      const res = await fetch(`/api/user-data/${encodeURIComponent(cleanEmail)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          data: {
+            leads,
+            leadTags,
+            smtpAccounts,
+            campaigns,
+            emailTemplates,
+            templateCategories,
+            threads,
+            sentEmails,
+            minedLeads,
+            columnSettings,
+            notificationSettings,
+            userProfile: {
+              quotaUsed: currentUser.quotaUsed,
+              quotaLimit: currentUser.quotaLimit,
+              aiCredits: currentUser.aiCredits,
+              company: currentUser.company,
+              title: currentUser.title,
+              phone: currentUser.phone,
+              plan: currentUser.plan,
+              bdtPlanLabel: currentUser.bdtPlanLabel
+            }
+          }
+        })
+      });
+
+      if (res.ok) {
+        setSyncStatus('synced');
+        return true;
+      } else {
+        setSyncStatus('offline');
+        return false;
+      }
+    } catch (err) {
+      console.warn('Direct workspace save error:', err);
+      setSyncStatus('offline');
+      return false;
+    }
+  };
+
   // Play notification audio using Web Audio API or custom audio
   const playNotificationSound = (overridePreset?: string) => {
     if (!notificationSettings.soundEnabled) return;
@@ -1140,8 +1200,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Lead Actions
   const addLeads = (newLeads: Partial<Lead>[], targetTag?: string) => {
-    const defaultTag = targetTag ? [targetTag] : ['AI Generated'];
+    const cleanTargetTag = targetTag ? targetTag.trim() : '';
+    const defaultTag = cleanTargetTag ? [cleanTargetTag] : ['Imported Leads'];
     const existingIds = new Set(leads.map(l => l.id));
+
+    // If targetTag is provided and not already in leadTags, automatically register it in leadTags
+    if (cleanTargetTag) {
+      setLeadTags(prev => {
+        if (!prev.some(t => t.name.toLowerCase() === cleanTargetTag.toLowerCase())) {
+          return [...prev, {
+            id: `tag-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            name: cleanTargetTag,
+            color: 'cyan',
+            description: 'Custom imported lead tag',
+            count: 0
+          }];
+        }
+        return prev;
+      });
+    }
 
     const prepared: Lead[] = newLeads.map((l, idx) => {
       let candidateId = l.id;
@@ -1149,6 +1226,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         candidateId = `lead-${Date.now()}-${Math.random().toString(36).substring(2, 7)}-${idx}`;
       }
       existingIds.add(candidateId);
+
+      // Determine final tags: if cleanTargetTag is provided, ALWAYS ensure it is included as the primary tag
+      let finalTags: string[] = [];
+      if (cleanTargetTag) {
+        const otherTags = (l.tags || []).filter(t => t && t.toLowerCase() !== cleanTargetTag.toLowerCase());
+        finalTags = [cleanTargetTag, ...otherTags];
+      } else if (l.tags && l.tags.length > 0) {
+        finalTags = Array.from(new Set(l.tags.filter(Boolean)));
+      } else {
+        finalTags = defaultTag;
+      }
 
       return {
         id: candidateId,
@@ -1172,7 +1260,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         daysAgo: 0,
         sentCampaigns: l.sentCampaigns || [],
         customNotes: l.customNotes || '',
-        tags: l.tags && l.tags.length > 0 ? l.tags : defaultTag,
+        tags: finalTags.length > 0 ? finalTags : ['Imported Leads'],
         openCount: l.openCount || 0,
         isReplied: l.isReplied || false,
         isTrash: false,
@@ -1182,7 +1270,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setLeads(prev => [...prepared, ...prev]);
     addNotification({
       title: `Added ${prepared.length} Verified Leads ✨`,
-      message: `Enriched with valid phone numbers, tags, and verified domain health pings.`,
+      message: `Assigned tag "${cleanTargetTag || prepared[0]?.tags?.[0] || 'Imported Leads'}" with verified domain health pings.`,
       type: 'lead',
       linkTab: 'leads'
     });
@@ -2087,6 +2175,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         playNotificationSound,
         requestDesktopNotificationPermission,
         leads,
+        setLeads,
         addLeads,
         updateLead,
         deleteLeadToTrash,
@@ -2097,6 +2186,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         bulkPermanentDeleteLeads,
         verifyLeadWebsite,
         leadTags,
+        setLeadTags,
         addLeadTag,
         updateLeadTag,
         deleteLeadTag,
@@ -2104,6 +2194,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         columnSettings,
         toggleColumnSetting,
         threads,
+        setThreads,
         activeThreadId,
         setActiveThreadId,
         sendReply,
@@ -2115,6 +2206,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         restoreThread,
         permanentDeleteThread,
         campaigns,
+        setCampaigns,
         createCampaign,
         updateCampaign,
         toggleCampaignStatus,
@@ -2126,7 +2218,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         launchQuickFollowUp,
         getDormantLeads,
         emailTemplates,
+        setEmailTemplates,
         templateCategories,
+        setTemplateCategories,
         addTemplateCategory,
         deleteTemplateCategory,
         addEmailTemplate,
@@ -2135,6 +2229,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         restoreEmailTemplate,
         permanentDeleteEmailTemplate,
         smtpAccounts,
+        setSmtpAccounts,
         addSMTPAccount,
         updateSMTPAccount,
         deleteSMTPAccount,
@@ -2142,6 +2237,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         permanentDeleteSMTPAccount,
         testSMTPConnection,
         sentEmails,
+        setSentEmails,
         addSentEmailLog,
         clearSentEmails,
         deleteSentEmail,
@@ -2177,6 +2273,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         minedLeads,
         setMinedLeads,
         loadUserWorkspace,
+        saveWorkspaceToDatabase,
         isWorkspaceLoading,
         syncStatus,
         emptyAllTrash,
