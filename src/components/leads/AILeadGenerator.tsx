@@ -176,7 +176,7 @@ function synthesizeClientLeads(
 }
 
 export const AILeadGenerator: React.FC = () => {
-  const { addLeads, setActiveTab, minedLeads, setMinedLeads, leadTags, addLeadTag, addNotification } = useApp();
+  const { addLeads, setActiveTab, minedLeads, setMinedLeads, leadTags, addLeadTag, addNotification, deductAiTokens } = useApp();
 
   // Active Tab Mode: 'structured_generator' vs 'ai_chat_miner'
   const [activeMiningMode, setActiveMiningMode] = useState<'structured' | 'chat'>('structured');
@@ -277,7 +277,7 @@ export const AILeadGenerator: React.FC = () => {
     {
       id: 'chat-init',
       role: 'assistant',
-      content: `Hello! I am your **Gemini 3.7 Conversational Lead Mining Agent** 🤖.
+      content: `Hello! I am your **Google Gemini 2.0 Conversational Lead Mining Agent** 🤖.
 
 You can chat with me in natural language to research and extract targeted leads. For example:
 - *"Find 10 marketing directors in Austin tech companies with direct phones"*
@@ -336,7 +336,7 @@ What specific decision makers should I uncover for you?`,
     setIsGenerating(true);
     setErrorMsg('');
     setProgressPercent(15);
-    setProgressStep('Connecting to Gemini 3.7 Lead Intelligence Engine...');
+    setProgressStep('Connecting to Google Gemini 2.0 Lead Intelligence Engine...');
 
     try {
       const t1 = setTimeout(() => {
@@ -354,6 +354,7 @@ What specific decision makers should I uncover for you?`,
       }, 800);
 
       let parsedLeadsData: any[] | null = null;
+      let usedTokens = batchSize * 45;
 
       try {
         const res = await fetch('/api/leads/generate', {
@@ -387,6 +388,9 @@ What specific decision makers should I uncover for you?`,
 
         if (data && data.leads && Array.isArray(data.leads) && data.leads.length > 0) {
           parsedLeadsData = data.leads;
+          if (data.usage?.totalTokens) {
+            usedTokens = data.usage.totalTokens;
+          }
         }
       } catch (fetchErr: any) {
         if (fetchErr.name === 'AbortError' || controller.signal.aborted) {
@@ -394,6 +398,9 @@ What specific decision makers should I uncover for you?`,
         }
         console.warn('Primary lead intelligence stream note:', fetchErr?.message);
       }
+
+      // Deduct AI Tokens from user's balance
+      deductAiTokens(usedTokens);
 
       // If backend API or upstream LLM is unavailable or returned non-JSON, gracefully synthesize verified leads
       if (!parsedLeadsData || parsedLeadsData.length === 0) {
@@ -508,6 +515,9 @@ What specific decision makers should I uncover for you?`,
           const data = safeParseApiResponse(rawText);
 
           if (data && data.leads && Array.isArray(data.leads) && data.leads.length > 0) {
+            const usedTokens = data.usage?.totalTokens || 280;
+            deductAiTokens(usedTokens);
+
             extracted = data.leads.map((l: any, idx: number) => ({
               id: `mined-chat-${Date.now()}-${idx}`,
               name: l.name || `Executive ${idx + 1}`,
@@ -540,6 +550,7 @@ What specific decision makers should I uncover for you?`,
 
       // If backend API returned HTML or empty, synthesize high quality matching prospects
       if (extracted.length === 0) {
+        deductAiTokens(210);
         extracted = synthesizeClientLeads(
           6,
           query.slice(0, 40) || 'B2B Target',
@@ -701,7 +712,7 @@ What specific decision makers should I uncover for you?`,
             <Sparkles className="w-8 h-8 text-purple-400" />
             AI Lead Miner & Social Intelligence
             <span className="px-2.5 py-0.5 text-xs font-extrabold bg-purple-500/20 text-purple-300 border border-purple-500/40 rounded-full">
-              Gemini 3.7 Deep Research
+              Google Gemini 2.0 Lead Intelligence
             </span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
@@ -752,7 +763,7 @@ What specific decision makers should I uncover for you?`,
                 <p className="text-[11px] text-slate-400">Describe the ideal leads you need in any language and Gemini will extract them.</p>
               </div>
             </div>
-            <div className="text-xs text-slate-500 font-mono">Model: Gemini 3.7 Flash</div>
+            <div className="text-xs text-slate-500 font-mono">Model: Gemini 2.0 Flash</div>
           </div>
 
           {/* Chat Stream */}

@@ -192,6 +192,7 @@ interface AppContextType {
   updateUserPermissions: (userId: string, permissions: any) => void;
   deleteUserAccount: (userId: string) => void;
   resetUserPasswordByEmail: (email: string, newPass: string) => boolean;
+  deductAiTokens: (tokensUsed: number) => void;
   logout: () => void;
   isLogoutConfirmOpen: boolean;
   setIsLogoutConfirmOpen: (open: boolean) => void;
@@ -2295,6 +2296,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
+  const deductAiTokens = (tokensUsed: number) => {
+    if (!tokensUsed || tokensUsed <= 0) return;
+    const cleanTokens = Math.max(1, Math.round(tokensUsed));
+    setCurrentUser(prev => {
+      const updatedCredits = Math.max(0, (prev.aiCredits || 0) - cleanTokens);
+      return {
+        ...prev,
+        aiCredits: updatedCredits
+      };
+    });
+    setAllUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, aiCredits: Math.max(0, (u.aiCredits || 0) - cleanTokens) } : u));
+  };
+
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState<boolean>(false);
 
   const requestLogout = () => {
@@ -2594,6 +2608,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateUserPermissions,
         deleteUserAccount,
         resetUserPasswordByEmail,
+        deductAiTokens,
         logout,
         isLogoutConfirmOpen,
         setIsLogoutConfirmOpen,

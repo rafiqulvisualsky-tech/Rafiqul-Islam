@@ -43,6 +43,7 @@ interface ChatMessage {
   content: string;
   timestamp: string;
   modelUsed?: string;
+  tokensUsed?: number;
 }
 
 interface ChatSession {
@@ -53,7 +54,7 @@ interface ChatSession {
 }
 
 export const GeminiAssistant: React.FC = () => {
-  const { currentUser, leads, emailTemplates, campaigns, addEmailTemplate, addNotification, playNotificationSound } = useApp();
+  const { currentUser, leads, emailTemplates, campaigns, addEmailTemplate, addNotification, playNotificationSound, deductAiTokens } = useApp();
 
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
     try {
@@ -73,7 +74,7 @@ export const GeminiAssistant: React.FC = () => {
           {
             id: 'msg-init',
             role: 'assistant',
-            content: `Hello ${currentUser.name || 'Friend'}! I am your **Visual Sky AI Outreach Copilot** (powered by Gemini 3.7 & ChatGPT Intelligence).
+            content: `Hello ${currentUser.name || 'Friend'}! I am your **Visual Sky AI Outreach Copilot** (powered by Google Gemini 2.0 Flash).
 
 ### What I can engineer for you today:
 1. 🎯 **Hyper-Personalized Icebreakers**: Generate tailor-made 1-to-1 hooks using your leads' company and niche data.
@@ -84,7 +85,8 @@ export const GeminiAssistant: React.FC = () => {
 
 You can also **attach CRM Leads**, **select AI Models**, or **voice dictate** prompts below!`,
             timestamp: 'Just now',
-            modelUsed: 'Gemini 3.7 Flash'
+            modelUsed: 'Gemini 2.0 Flash',
+            tokensUsed: 180
           }
         ]
       }
@@ -113,7 +115,7 @@ You can also **attach CRM Leads**, **select AI Models**, or **voice dictate** pr
   }, [sessions, activeSessionId]);
 
   // Selected AI Model
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.7-flash');
+  const [selectedModel, setSelectedModel] = useState<string>('Gemini 2.0 Flash');
   const [showModelDropdown, setShowModelDropdown] = useState<boolean>(false);
 
   // Selected System Persona
@@ -294,6 +296,7 @@ You can also **attach CRM Leads**, **select AI Models**, or **voice dictate** pr
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          model: selectedModel,
           messages: [
             ...activeSession.messages,
             { role: 'user', content: userMsg.content + contextAttachmentStr }
@@ -306,13 +309,19 @@ Format with clean Markdown, clear sections, bullet points, and ready-to-use emai
 
       const data = await response.json();
       const replyContent = data.reply || 'Here is the outreach strategy crafted for your campaign.';
+      const usedTokens = data?.usage?.totalTokens || 240;
+      const actualModelUsed = data?.modelUsed || selectedModel;
+
+      // Dynamic token usage deduction
+      deductAiTokens(usedTokens);
 
       const assistantMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
         role: 'assistant',
         content: replyContent,
         timestamp: 'Just now',
-        modelUsed: selectedModel
+        modelUsed: actualModelUsed,
+        tokensUsed: usedTokens
       };
 
       setSessions(prev => prev.map(s => {
@@ -327,17 +336,21 @@ Format with clean Markdown, clear sections, bullet points, and ready-to-use emai
 
       addNotification({
         title: 'AI Copilot Strategy Ready 🤖',
-        message: `Generated outbound copy using ${selectedModel}.`,
+        message: `Generated outbound copy using ${actualModelUsed} (Used ${usedTokens} tokens).`,
         type: 'system',
         linkTab: 'ai_copilot'
       });
     } catch {
+      const fallbackTokens = 180;
+      deductAiTokens(fallbackTokens);
+
       const fallbackMsg: ChatMessage = {
         id: `ai-err-${Date.now()}`,
         role: 'assistant',
         content: `### High-Converting Cold Email Template:\n\n**Subject**: Quick question about {{company}}'s outbound\n\nHi {{name}},\n\nSaw your team is scaling {{niche}} operations. Most leaders we speak with struggle with email deliverability and spam box landing.\n\nWe built an automated multi-relay routing engine that guarantees 99% primary inbox placement.\n\nOpen to a 2-minute video preview?\n\nBest,\n${currentUser.name}`,
         timestamp: 'Just now',
-        modelUsed: selectedModel
+        modelUsed: selectedModel,
+        tokensUsed: fallbackTokens
       };
       setSessions(prev => prev.map(s => {
         if (s.id === activeSessionId) {
@@ -473,7 +486,7 @@ Format with clean Markdown, clear sections, bullet points, and ready-to-use emai
                   {selectedModel}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">Gemini 3.7 & ChatGPT Outreach Specialist</p>
+              <p className="text-[11px] text-slate-400">Google Gemini Outreach & Deliverability Specialist</p>
             </div>
           </div>
 
@@ -494,12 +507,12 @@ Format with clean Markdown, clear sections, bullet points, and ready-to-use emai
               </button>
 
               {showModelDropdown && (
-                <div className="absolute right-0 mt-2 w-56 bg-slate-950 border border-slate-800 rounded-2xl p-2 shadow-2xl z-50 space-y-1 animate-in fade-in zoom-in-95">
+                <div className="absolute right-0 mt-2 w-64 bg-slate-950 border border-slate-800 rounded-2xl p-2 shadow-2xl z-50 space-y-1 animate-in fade-in zoom-in-95">
                   {[
-                    { id: 'Gemini 3.7 Flash', desc: 'Fastest cold email & sequence generator' },
-                    { id: 'Gemini 2.5 Pro', desc: 'Deep research & strategy intelligence' },
-                    { id: 'ChatGPT-4o Mode', desc: 'Advanced conversational nuance' },
-                    { id: 'Claude 3.5 Sonnet Mode', desc: 'High-converting executive copy' },
+                    { id: 'Gemini 2.0 Flash', desc: 'Fastest real-time cold email & sequence generator' },
+                    { id: 'Gemini 1.5 Flash', desc: 'Ultra-low latency outreach intelligence' },
+                    { id: 'Gemini 2.5 Flash', desc: 'Next-gen reasoning & multi-step campaign logic' },
+                    { id: 'Gemini Flash Pro', desc: 'Deep research & enterprise sequence architect' },
                   ].map(m => (
                     <button
                       key={m.id}
@@ -598,6 +611,12 @@ Format with clean Markdown, clear sections, bullet points, and ready-to-use emai
                         {isSpeaking ? <VolumeX className="w-3 h-3 text-rose-400 animate-pulse" /> : <Volume2 className="w-3 h-3" />}
                         <span>{isSpeaking ? 'Stop Audio' : 'Listen'}</span>
                       </button>
+
+                      {msg.tokensUsed && (
+                        <span className="text-[10px] text-cyan-400/90 font-mono flex items-center gap-1 bg-cyan-950/40 px-2 py-0.5 rounded-md border border-cyan-800/40">
+                          ⚡ {msg.tokensUsed} tokens
+                        </span>
+                      )}
 
                       {msg.modelUsed && (
                         <span className="text-[10px] text-slate-500 font-mono ml-auto">

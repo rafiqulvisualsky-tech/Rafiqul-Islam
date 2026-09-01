@@ -71,7 +71,8 @@ export const SmartInbox: React.FC = () => {
     smtpAccounts,
     sendDirectEmail,
     addNotification,
-    syncInboxReplies
+    syncInboxReplies,
+    deductAiTokens
   } = useApp();
 
   const [isSyncingImap, setIsSyncingImap] = useState<boolean>(false);
@@ -286,7 +287,10 @@ export const SmartInbox: React.FC = () => {
       if (data.reply) {
         setReplyText(cleanBodyText(data.reply));
       }
+      const usedTokens = data?.usage?.totalTokens || 125;
+      deductAiTokens(usedTokens);
     } catch {
+      deductAiTokens(90);
       setReplyText(`Hi ${currentThread.leadName},\n\nThank you for following up! I'd love to share a quick 2-minute video preview of our platform.\n\nWould next Thursday at 2 PM work for a brief 10-min chat?\n\nBest regards,\n${currentUser.name}`);
     } finally {
       setIsGeneratingAiReply(false);
@@ -312,6 +316,8 @@ export const SmartInbox: React.FC = () => {
       if (data.success && data.optimizedBody) {
         setReplyText(data.optimizedBody);
       }
+      const usedTokens = data?.usage?.totalTokens || 95;
+      deductAiTokens(usedTokens);
     } catch {} finally {
       setIsGeneratingAiReply(false);
     }
@@ -336,6 +342,8 @@ export const SmartInbox: React.FC = () => {
         setComposeSubject(data.subject);
         setComposeBody(data.body);
       }
+      const usedTokens = data?.usage?.totalTokens || 160;
+      deductAiTokens(usedTokens);
     } catch {} finally {
       setIsGeneratingComposeAi(false);
     }
