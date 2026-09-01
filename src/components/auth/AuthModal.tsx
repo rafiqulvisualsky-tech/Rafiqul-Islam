@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   ShieldCheck, 
@@ -196,10 +196,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Forgot Password State
   const [forgotEmail, setForgotEmail] = useState<string>('');
   const [forgotOtp, setForgotOtp] = useState<string>('');
+  const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
+  const [resendCooldown, setResendCooldown] = useState<number>(0);
+  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [generatedOtp, setGeneratedOtp] = useState<string>('');
   const [newResetPassword, setNewResetPassword] = useState<string>('');
   const [confirmResetPassword, setConfirmResetPassword] = useState<string>('');
   const [forgotPhase, setForgotPhase] = useState<'request' | 'verify' | 'success'>('request');
+
+  // OTP Resend Countdown Timer
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const interval = setInterval(() => {
+      setResendCooldown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [resendCooldown]);
 
   // Status & Feedback
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -672,9 +684,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setGeneratedOtp(data.otpCode);
       }
       setForgotOtp('');
+      setOtpDigits(['', '', '', '', '', '']);
+      setResendCooldown(60);
       setForgotPhase('verify');
       setIsLoading(false);
       setSuccessMessage(data.message || `A 6-digit verification code has been dispatched to ${targetEmail}. Please check your inbox.`);
+      
+      setTimeout(() => {
+        otpInputRefs.current[0]?.focus();
+      }, 100);
+
       addNotification({
         title: 'Verification Code Dispatched 📧',
         message: `A 6-digit security code has been sent to ${targetEmail}.`,
@@ -687,6 +706,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   const handleResendOtp = async () => {
+    if (resendCooldown > 0) return;
     const targetEmail = forgotEmail.trim().toLowerCase();
     if (!targetEmail) return;
     setIsLoading(true);
@@ -701,7 +721,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       if (data.otpCode) {
         setGeneratedOtp(data.otpCode);
       }
+      setOtpDigits(['', '', '', '', '', '']);
+      setForgotOtp('');
+      setResendCooldown(60);
       setSuccessMessage(`A fresh 6-digit code has been dispatched to ${targetEmail}.`);
+      setTimeout(() => {
+        otpInputRefs.current[0]?.focus();
+      }, 100);
       addNotification({
         title: 'New Code Dispatched 📧',
         message: `A fresh 6-digit security code has been sent to ${targetEmail}.`,
@@ -713,11 +739,80 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
+  const handleOtpDigitChange = (index: number, val: string) => {
+    const numericVal = val.replace(/\D/g, '');
+
+    // Multi-digit paste or autofill in a single box
+    if (numericVal.length > 1) {
+      const chars = numericVal.slice(0, 6).split('');
+      const newDigits = [...otpDigits];
+      chars.forEach((c, i) => {
+        if (i < 6) newDigits[i] = c;
+      });
+      setOtpDigits(newDigits);
+      setForgotOtp(newDigits.join(''));
+      const nextIdx = Math.min(chars.length, 5);
+      otpInputRefs.current[nextIdx]?.focus();
+      return;
+    }
+
+    const newDigits = [...otpDigits];
+    newDigits[index] = numericVal;
+    setOtpDigits(newDigits);
+    setForgotOtp(newDigits.join(''));
+
+    // Advance focus to next input
+    if (numericVal && index < 5) {
+      otpInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace') {
+      if (!otpDigits[index] && index > 0) {
+        otpInputRefs.current[index - 1]?.focus();
+      }
+    } else if (e.key === 'ArrowLeft' && index > 0) {
+      otpInputRefs.current[index - 1]?.focus();
+    } else if (e.key === 'ArrowRight' && index < 5) {
+      otpInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (!pasted) return;
+    const newDigits = ['', '', '', '', '', ''];
+    pasted.split('').forEach((char, idx) => {
+      if (idx < 6) newDigits[idx] = char;
+    });
+    setOtpDigits(newDigits);
+    setForgotOtp(newDigits.join(''));
+    const focusTarget = Math.min(pasted.length, 5);
+    otpInputRefs.current[focusTarget]?.focus();
+  };
+
+  const getPasswordStrength = (pass: string) => {
+    if (!pass) return { score: 0, label: '', color: 'bg-slate-700' };
+    let score = 0;
+    if (pass.length >= 6) score += 1;
+    if (pass.length >= 8) score += 1;
+    if (/[0-9]/.test(pass)) score += 1;
+    if (/[A-Z]/.test(pass) || /[^A-Za-z0-9]/.test(pass)) score += 1;
+
+    if (score <= 1) return { score: 1, label: 'Weak', color: 'bg-rose-500' };
+    if (score === 2) return { score: 2, label: 'Fair', color: 'bg-amber-500' };
+    if (score === 3) return { score: 3, label: 'Good', color: 'bg-cyan-500' };
+    return { score: 4, label: 'Strong', color: 'bg-emerald-500' };
+  };
+
   const handleVerifyOtpAndChangePass = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
-    if (!forgotOtp.trim() || forgotOtp.trim().length !== 6) {
+    const finalOtp = otpDigits.join('').trim() || forgotOtp.trim();
+    if (!finalOtp || finalOtp.length !== 6) {
       setErrorMessage('Please enter the full 6-digit verification code.');
       return;
     }
@@ -737,7 +832,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: forgotEmail.trim().toLowerCase(),
-          otp: forgotOtp.trim(),
+          otp: finalOtp,
           newPassword: newResetPassword
         })
       });
@@ -1745,7 +1840,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             )}
 
             {/* --------------------------------------------------------------------- */}
-            {/* SUB-FLOW 4: FORGOT PASSWORD RECOVERY                                   */}
+            {/* SUB-FLOW 4: FORGOT PASSWORD RECOVERY (STANDARD OTP VERIFICATION UI)    */}
             {/* --------------------------------------------------------------------- */}
             {authMode === 'forgot_password' && (
               <div className="space-y-4">
@@ -1755,15 +1850,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <span>Reset Your Password</span>
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Recover access to your {portalType} account using your registered work email.
+                    Recover access to your {portalType} account with a secure one-time passcode.
                   </p>
                 </div>
 
+                {/* Phase 1: Request Email */}
                 {forgotPhase === 'request' && (
-                  <form onSubmit={handleRequestPasswordReset} className="space-y-3.5">
+                  <form onSubmit={handleRequestPasswordReset} className="space-y-4">
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                        Registered Email Address
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1.5">
+                        Registered Email Address <span className="text-rose-400">*</span>
                       </label>
                       <div className="relative">
                         <Mail className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
@@ -1772,8 +1868,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           required
                           value={forgotEmail}
                           onChange={(e) => setForgotEmail(e.target.value)}
-                          placeholder="you@domain.com"
-                          className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                          placeholder="e.g. rafiqulvisualsky@gmail.com"
+                          className="w-full pl-9 pr-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                          autoFocus
                         />
                       </div>
                     </div>
@@ -1781,75 +1878,119 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <button
                       type="submit"
                       disabled={isLoading}
-                      className="w-full py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow"
+                      className="w-full py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-lg shadow-cyan-600/20 disabled:opacity-50"
                     >
                       {isLoading ? (
-                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Dispatching Security OTP...</span>
+                        </>
                       ) : (
-                        <span>Generate Reset OTP Code</span>
+                        <>
+                          <Zap className="w-4 h-4" />
+                          <span>Send 6-Digit OTP Code</span>
+                        </>
                       )}
                     </button>
                   </form>
                 )}
 
+                {/* Phase 2: Verify OTP & Set New Password */}
                 {forgotPhase === 'verify' && (
                   <form onSubmit={handleVerifyOtpAndChangePass} className="space-y-4">
-                    <div className="p-3.5 bg-cyan-950/40 border border-cyan-500/30 rounded-xl text-xs text-slate-200 flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0 mt-0.5">
-                        <Mail className="w-4 h-4" />
-                      </div>
-                      <div className="space-y-1">
-                        <div className="font-bold text-slate-100 flex items-center gap-1.5">
-                          <span>Verification Code Sent</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono">6 Digits</span>
+                    {/* Header info badge with change email trigger */}
+                    <div className="p-3 bg-cyan-950/40 border border-cyan-500/30 rounded-xl text-xs text-slate-200 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
+                          <Mail className="w-3.5 h-3.5" />
                         </div>
-                        <p className="text-[11px] text-slate-300 leading-relaxed">
-                          We sent a 6-digit OTP code to <strong className="text-cyan-300">{forgotEmail}</strong>. Please enter the code below to reset your password.
-                        </p>
+                        <div className="min-w-0 truncate">
+                          <span className="text-[10px] text-slate-400 block">Code sent to:</span>
+                          <span className="font-bold text-cyan-300 text-xs truncate block">{forgotEmail}</span>
+                        </div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForgotPhase('request');
+                          setForgotOtp('');
+                          setOtpDigits(['', '', '', '', '', '']);
+                        }}
+                        className="text-[11px] font-semibold text-slate-400 hover:text-cyan-300 underline cursor-pointer shrink-0"
+                      >
+                        Change
+                      </button>
                     </div>
 
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
+                    {/* Standard 6-Digit Segmented OTP Input */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
                         <label className="block text-[11px] font-bold text-slate-300">
-                          6-Digit OTP Verification Code *
+                          Enter 6-Digit OTP Code <span className="text-rose-400">*</span>
                         </label>
                         <button
                           type="button"
+                          disabled={resendCooldown > 0 || isLoading}
                           onClick={handleResendOtp}
-                          className="text-[11px] text-cyan-400 hover:text-cyan-300 hover:underline cursor-pointer"
+                          className="text-[11px] font-medium text-cyan-400 hover:text-cyan-300 disabled:text-slate-600 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
                         >
-                          Resend Code
+                          {resendCooldown > 0 ? (
+                            <span>Resend in {resendCooldown}s</span>
+                          ) : (
+                            <span>Resend OTP Code</span>
+                          )}
                         </button>
                       </div>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        maxLength={6}
-                        required
-                        value={forgotOtp}
-                        onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        placeholder="Enter 6-digit code"
-                        className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-base text-slate-100 placeholder-slate-600 focus:outline-none focus:border-cyan-500 font-mono tracking-widest text-center font-bold"
-                        autoFocus
-                      />
+
+                      {/* 6 Digit Individual Cells */}
+                      <div className="flex items-center justify-between gap-1.5 sm:gap-2">
+                        {[0, 1, 2, 3, 4, 5].map((index) => (
+                          <input
+                            key={index}
+                            ref={(el) => (otpInputRefs.current[index] = el)}
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            maxLength={1}
+                            value={otpDigits[index]}
+                            onChange={(e) => handleOtpDigitChange(index, e.target.value)}
+                            onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                            onPaste={handleOtpPaste}
+                            className={`w-full aspect-square max-w-[48px] text-center font-mono font-extrabold text-base sm:text-lg rounded-xl bg-slate-950 border transition-all focus:outline-none ${
+                              otpDigits[index]
+                                ? 'border-cyan-500 text-cyan-300 bg-cyan-950/20 shadow-sm shadow-cyan-500/20'
+                                : 'border-slate-800 text-slate-100 hover:border-slate-700 focus:border-cyan-500'
+                            }`}
+                          />
+                        ))}
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Password Inputs */}
+                    <div className="space-y-3 pt-1">
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                          New Password (Min 6 chars) *
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-bold text-slate-300">
+                            New Password (Min 6 chars) <span className="text-rose-400">*</span>
+                          </label>
+                          {newResetPassword && (
+                            <span className="text-[10px] font-semibold text-slate-400">
+                              Strength: <strong className={getPasswordStrength(newResetPassword).color.replace('bg-', 'text-')}>
+                                {getPasswordStrength(newResetPassword).label}
+                              </strong>
+                            </span>
+                          )}
+                        </div>
                         <div className="relative">
+                          <Lock className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
                           <input
                             type={showPassword ? 'text' : 'password'}
                             required
                             minLength={6}
                             value={newResetPassword}
                             onChange={(e) => setNewResetPassword(e.target.value)}
-                            placeholder="••••••••"
-                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 pr-9"
+                            placeholder="Create a strong password"
+                            className="w-full pl-9 pr-9 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
                           />
                           <button
                             type="button"
@@ -1859,20 +2000,54 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                           </button>
                         </div>
+                        {/* Visual Strength Progress Bar */}
+                        {newResetPassword && (
+                          <div className="grid grid-cols-4 gap-1 mt-1.5">
+                            {[1, 2, 3, 4].map((level) => (
+                              <div
+                                key={level}
+                                className={`h-1 rounded-full transition-all duration-300 ${
+                                  getPasswordStrength(newResetPassword).score >= level
+                                    ? getPasswordStrength(newResetPassword).color
+                                    : 'bg-slate-800'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        )}
                       </div>
+
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                          Confirm New Password *
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-bold text-slate-300">
+                            Confirm New Password <span className="text-rose-400">*</span>
+                          </label>
+                          {confirmResetPassword && (
+                            <span className="text-[10px] font-semibold flex items-center gap-1">
+                              {newResetPassword === confirmResetPassword ? (
+                                <span className="text-emerald-400 flex items-center gap-0.5">
+                                  <Check className="w-3 h-3" /> Passwords match
+                                </span>
+                              ) : (
+                                <span className="text-rose-400">Passwords do not match</span>
+                              )}
+                            </span>
+                          )}
+                        </div>
                         <div className="relative">
+                          <Lock className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
                           <input
                             type={showConfirmPassword ? 'text' : 'password'}
                             required
                             minLength={6}
                             value={confirmResetPassword}
                             onChange={(e) => setConfirmResetPassword(e.target.value)}
-                            placeholder="••••••••"
-                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 pr-9"
+                            placeholder="Repeat new password"
+                            className={`w-full pl-9 pr-9 py-2 bg-slate-950 border rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none ${
+                              confirmResetPassword && newResetPassword !== confirmResetPassword
+                                ? 'border-rose-500/70 focus:border-rose-500'
+                                : 'border-slate-800 focus:border-cyan-500'
+                            }`}
                           />
                           <button
                             type="button"
@@ -1887,23 +2062,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                     <button
                       type="submit"
-                      className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-lg shadow-emerald-500/20"
+                      disabled={isLoading || otpDigits.join('').length !== 6 || newResetPassword.length < 6 || newResetPassword !== confirmResetPassword}
+                      className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed mt-2"
                     >
-                      <Check className="w-4 h-4" />
-                      <span>Verify OTP & Save New Password</span>
+                      {isLoading ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Check className="w-4 h-4" />
+                      )}
+                      <span>Verify OTP & Update Password</span>
                     </button>
                   </form>
                 )}
 
+                {/* Phase 3: Success Confirmation */}
                 {forgotPhase === 'success' && (
-                  <div className="p-5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center space-y-3.5">
+                  <div className="p-5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-center space-y-3.5 animate-in fade-in zoom-in-95 duration-200">
                     <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mx-auto">
                       <CheckCircle2 className="w-7 h-7" />
                     </div>
                     <div>
                       <h4 className="font-bold text-sm text-slate-100">Password Successfully Updated!</h4>
                       <p className="text-xs text-slate-400 mt-1">
-                        Your account password has been updated. You can now sign in with your new password.
+                        Your account password for <strong className="text-slate-200">{forgotEmail}</strong> has been securely changed.
                       </p>
                     </div>
                     <button
@@ -1911,10 +2092,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       onClick={() => {
                         setAuthMode('signin');
                         setForgotPhase('request');
+                        setEmail(forgotEmail);
                       }}
-                      className="px-6 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/25 transition cursor-pointer"
+                      className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs shadow-lg shadow-cyan-500/25 transition cursor-pointer flex items-center justify-center gap-2"
                     >
-                      Sign In with New Password
+                      <span>Sign In with New Password</span>
+                      <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
                 )}
@@ -1923,10 +2106,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <div className="text-center pt-2">
                     <button
                       type="button"
-                      onClick={() => setAuthMode('signin')}
-                      className="text-xs text-cyan-400 hover:text-cyan-300"
+                      onClick={() => {
+                        setAuthMode('signin');
+                        setForgotPhase('request');
+                      }}
+                      className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center justify-center gap-1 mx-auto"
                     >
-                      &larr; Remember your password? Back to Sign In
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Back to Sign In</span>
                     </button>
                   </div>
                 )}

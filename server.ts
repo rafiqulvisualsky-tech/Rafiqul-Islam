@@ -104,58 +104,105 @@ app.post('/api/auth/send-otp', async (req, res) => {
 
     // Look for configured SMTP relay to send the email
     let sentViaRealSmtp = false;
+    let senderAddress = 'security@visualsky.agency';
+    let smtpToUse: any = null;
+
+    // 1. Check target user's workspace SMTP accounts
     const userDataPath = getUserDataFilePath(cleanEmail);
     if (fs.existsSync(userDataPath)) {
       try {
         const uData = JSON.parse(fs.readFileSync(userDataPath, 'utf-8'));
         const primarySmtp = uData.smtpAccounts?.find((s: any) => s.password && s.host && !s.isTrash);
         if (primarySmtp) {
-          const transporter = nodemailer.createTransport({
-            host: primarySmtp.host,
-            port: Number(primarySmtp.port) || 587,
-            secure: primarySmtp.encryption === 'SSL' || Number(primarySmtp.port) === 465,
-            auth: {
-              user: primarySmtp.username,
-              pass: primarySmtp.password
-            },
-            tls: { rejectUnauthorized: false }
-          });
-
-          await transporter.sendMail({
-            from: `"VisualSky Security" <${primarySmtp.username}>`,
-            to: cleanEmail,
-            subject: `VisualSky Security Code: ${otpCode}`,
-            html: `
-              <div style="background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px 20px; color: #e2e8f0;">
-                <div style="max-width: 520px; margin: 0 auto; background: #111827; border: 1px solid #1e293b; border-radius: 16px; padding: 32px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);">
-                  <div style="margin-bottom: 24px; text-align: center;">
-                    <h2 style="margin: 0; font-size: 24px; font-weight: 800; color: #06b6d4; letter-spacing: -0.5px;">VisualSky Platform</h2>
-                    <p style="margin: 4px 0 0 0; font-size: 13px; color: #94a3b8;">Account Security & Verification</p>
-                  </div>
-                  <div style="background: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
-                    <p style="margin: 0 0 12px 0; font-size: 13px; color: #cbd5e1; font-weight: 500;">Your 6-Digit Password Reset OTP Code is:</p>
-                    <div style="font-size: 36px; font-weight: 900; font-family: monospace; letter-spacing: 8px; color: #38bdf8; padding: 12px; background: #1e293b; border-radius: 8px; border: 1px dashed #0ea5e9; display: inline-block;">
-                      ${otpCode}
-                    </div>
-                    <p style="margin: 14px 0 0 0; font-size: 12px; color: #94a3b8;">Valid for <strong>15 minutes</strong>. Do not share this code with anyone.</p>
-                  </div>
-                  <p style="margin: 0; font-size: 12px; color: #64748b; text-align: center; line-height: 1.5;">
-                    If you did not request this password reset, please disregard this email or contact support immediately.
-                  </p>
-                </div>
-              </div>
-            `
-          });
-          sentViaRealSmtp = true;
+          smtpToUse = primarySmtp;
         }
+      } catch {}
+    }
+
+    // 2. If not found, look for any configured SMTP account across other saved workspaces
+    if (!smtpToUse && fs.existsSync(DATA_DIR)) {
+      try {
+        const files = fs.readdirSync(DATA_DIR);
+        for (const file of files) {
+          if (file.startsWith('user_') && file.endsWith('.json')) {
+            try {
+              const fileContent = JSON.parse(fs.readFileSync(path.join(DATA_DIR, file), 'utf-8'));
+              const foundSmtp = fileContent.smtpAccounts?.find((s: any) => s.password && s.host && !s.isTrash);
+              if (foundSmtp) {
+                smtpToUse = foundSmtp;
+                break;
+              }
+            } catch {}
+          }
+        }
+      } catch {}
+    }
+
+    // 3. If still not found, check process.env SMTP variables
+    if (!smtpToUse && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+      smtpToUse = {
+        host: process.env.SMTP_HOST,
+        port: Number(process.env.SMTP_PORT) || 587,
+        encryption: process.env.SMTP_SECURE === 'true' ? 'SSL' : 'TLS',
+        username: process.env.SMTP_USER,
+        password: process.env.SMTP_PASS,
+        fromEmail: process.env.SMTP_FROM || process.env.SMTP_USER
+      };
+    }
+
+    // Attempt real email dispatch if SMTP is available
+    if (smtpToUse) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: smtpToUse.host,
+          port: Number(smtpToUse.port) || 587,
+          secure: smtpToUse.encryption === 'SSL' || Number(smtpToUse.port) === 465,
+          auth: {
+            user: smtpToUse.username,
+            pass: smtpToUse.password
+          },
+          tls: { rejectUnauthorized: false }
+        });
+
+        senderAddress = smtpToUse.fromEmail || smtpToUse.username;
+
+        await transporter.sendMail({
+          from: `"VisualSky Security" <${senderAddress}>`,
+          to: cleanEmail,
+          subject: `VisualSky Security Code: ${otpCode}`,
+          text: `Your VisualSky password reset verification code is: ${otpCode}\n\nThis code will expire in 15 minutes. If you did not request this password reset, please ignore this message.`,
+          html: `
+            <div style="background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px 20px; color: #e2e8f0;">
+              <div style="max-width: 520px; margin: 0 auto; background: #111827; border: 1px solid #1e293b; border-radius: 16px; padding: 32px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);">
+                <div style="margin-bottom: 24px; text-align: center;">
+                  <h2 style="margin: 0; font-size: 24px; font-weight: 800; color: #06b6d4; letter-spacing: -0.5px;">VisualSky Platform</h2>
+                  <p style="margin: 4px 0 0 0; font-size: 13px; color: #94a3b8;">Account Security & Verification</p>
+                </div>
+                <div style="background: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
+                  <p style="margin: 0 0 12px 0; font-size: 13px; color: #cbd5e1; font-weight: 500;">Your 6-Digit Password Reset OTP Code is:</p>
+                  <div style="font-size: 36px; font-weight: 900; font-family: monospace; letter-spacing: 8px; color: #38bdf8; padding: 12px; background: #1e293b; border-radius: 8px; border: 1px dashed #0ea5e9; display: inline-block;">
+                    ${otpCode}
+                  </div>
+                  <p style="margin: 14px 0 0 0; font-size: 12px; color: #94a3b8;">Valid for <strong>15 minutes</strong>. Do not share this code with anyone.</p>
+                </div>
+                <p style="margin: 0; font-size: 12px; color: #64748b; text-align: center; line-height: 1.5;">
+                  If you did not request this password reset, please disregard this email or contact support immediately.
+                </p>
+              </div>
+            </div>
+          `
+        });
+        sentViaRealSmtp = true;
       } catch (smtpErr: any) {
-        console.warn('Custom SMTP delivery for OTP note:', smtpErr?.message);
+        console.warn('SMTP delivery for OTP warning:', smtpErr?.message);
       }
     }
 
     return res.json({
       success: true,
-      message: `A 6-digit OTP verification code has been dispatched to ${cleanEmail}`,
+      message: sentViaRealSmtp 
+        ? `A 6-digit OTP verification code has been dispatched directly to ${cleanEmail}`
+        : `A 6-digit OTP verification code has been generated for ${cleanEmail}`,
       sentViaRealSmtp,
       otpCode // Included in response for seamless local verification & dev preview
     });
