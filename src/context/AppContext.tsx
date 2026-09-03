@@ -205,6 +205,7 @@ interface AppContextType {
   // Cross-Browser Cloud Workspace Sync
   loadUserWorkspace: (userEmail: string) => Promise<void>;
   saveWorkspaceToDatabase: () => Promise<boolean>;
+  persistResourceDirectly: (resource: string, items: any[]) => Promise<void>;
   isWorkspaceLoading: boolean;
   syncStatus: 'synced' | 'syncing' | 'offline';
   
@@ -820,20 +821,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const loadedWorkspaceEmailRef = useRef<string | null>(null);
   const [isWorkspaceLoading, setIsWorkspaceLoading] = useState<boolean>(false);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline'>('synced');
+  const isHydratingRef = useRef<boolean>(false);
 
-  // Load user workspace from server (Cross-Browser Persistence)
+  // Direct Central Database resource persistence helper
+  const persistResourceDirectly = async (resource: string, items: any[]) => {
+    if (!isAuthenticated || !currentUser?.email) return;
+    const cleanEmail = currentUser.email.trim().toLowerCase();
+    try {
+      setSyncStatus('syncing');
+      const res = await fetch(`/api/user-data/${encodeURIComponent(cleanEmail)}/resource/${encodeURIComponent(resource)}`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store'
+        },
+        body: JSON.stringify({ items })
+      });
+      if (res.ok) {
+        setSyncStatus('synced');
+      } else {
+        setSyncStatus('offline');
+      }
+    } catch (e) {
+      console.warn(`Direct database persistence error for ${resource}:`, e);
+      setSyncStatus('offline');
+    }
+  };
+
+  // Load user workspace from server (Cross-Browser Persistence & Login Hydration)
   const loadUserWorkspace = async (userEmail: string) => {
     if (!userEmail) return;
     const cleanEmail = userEmail.trim().toLowerCase();
     setIsWorkspaceLoading(true);
     setSyncStatus('syncing');
+    isHydratingRef.current = true;
 
     try {
-      const res = await fetch(`/api/user-data/${encodeURIComponent(cleanEmail)}`);
+      const res = await fetch(`/api/user-data/${encodeURIComponent(cleanEmail)}`, {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
       if (res.ok) {
         const json = await res.json();
         const data = json?.data;
         if (data && typeof data === 'object') {
+          // Central database is the single source of truth - hydrate all workspace state
           if (Array.isArray(data.leads)) {
             setLeads(data.leads);
             try { localStorage.setItem('visualsky_leads', JSON.stringify(data.leads)); } catch {}
@@ -881,6 +916,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (data.userProfile && typeof data.userProfile === 'object') {
             setCurrentUserState(prev => ({ ...prev, ...data.userProfile }));
           }
+        } else {
+          // Brand new user workspace - save initial baseline to central database
+          const initialData = {
+            leads: INITIAL_LEADS,
+            leadTags: INITIAL_TAGS,
+            smtpAccounts: INITIAL_SMTP,
+            campaigns: [],
+            emailTemplates: INITIAL_TEMPLATES,
+            templateCategories: INITIAL_TEMPLATE_CATEGORIES,
+            threads: INITIAL_THREADS,
+            sentEmails: INITIAL_SENT_LOGS,
+            minedLeads: [],
+            columnSettings: DEFAULT_COLUMNS,
+            notificationSettings: {
+              soundEnabled: true,
+              soundPreset: 'chime',
+              customAudioBase64: null,
+              volume: 85,
+              desktopPushEnabled: true
+            },
+            userProfile: {
+              quotaUsed: 0,
+              quotaLimit: 50000,
+              aiCredits: 10000
+            }
+          };
+          fetch(`/api/user-data/${encodeURIComponent(cleanEmail)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: initialData })
+          }).catch(() => {});
         }
       }
       loadedWorkspaceEmailRef.current = cleanEmail;
@@ -891,6 +957,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setSyncStatus('offline');
     } finally {
       setIsWorkspaceLoading(false);
+      setTimeout(() => {
+        isHydratingRef.current = false;
+      }, 400);
     }
   };
 
@@ -918,7 +987,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  // Sync to LocalStorage
+  // Sync to LocalStorage (secondary client cache)
   useEffect(() => { localStorage.setItem('visualsky_tags', JSON.stringify(leadTags)); }, [leadTags]);
   useEffect(() => { localStorage.setItem('visualsky_leads', JSON.stringify(leads)); }, [leads]);
   useEffect(() => { localStorage.setItem('visualsky_cols', JSON.stringify(columnSettings)); }, [columnSettings]);
@@ -945,6 +1014,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Debounced server workspace sync - only runs when workspace for currentUser has been loaded
   useEffect(() => {
     if (!isAuthenticated || !currentUser?.email) return;
+    if (isHydratingRef.current) return;
     const cleanEmail = currentUser.email.trim().toLowerCase();
 
     // Guard: Prevent saving until this user's workspace is confirmed loaded from the backend
@@ -1160,7 +1230,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: `tag-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       createdAt: new Date().toISOString()
     };
-    setLeadTags(prev => [newTag, ...prev]);
+    const updatedTags = [newTag, ...leadTags];
+    setLeadTags(updatedTags);
+    persistResourceDirectly('leadTags', updatedTags);
     addNotification({
       title: `Tag "${newTag.name}" Created 🏷️`,
       message: `Lead tag is now available across AI Lead Miner, manual imports, and campaigns.`,
@@ -1170,28 +1242,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateLeadTag = (id: string, updates: Partial<LeadTag>) => {
-    setLeadTags(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+    const updatedTags = leadTags.map(t => t.id === id ? { ...t, ...updates } : t);
+    setLeadTags(updatedTags);
+    persistResourceDirectly('leadTags', updatedTags);
   };
 
   const deleteLeadTag = (id: string) => {
     const tagToDelete = leadTags.find(t => t.id === id);
     if (!tagToDelete) return;
-    setLeadTags(prev => prev.filter(t => t.id !== id));
+    const updatedTags = leadTags.filter(t => t.id !== id);
+    setLeadTags(updatedTags);
+    persistResourceDirectly('leadTags', updatedTags);
     // Remove tag from leads
-    setLeads(prev => prev.map(l => ({
+    const updatedLeads = leads.map(l => ({
       ...l,
       tags: l.tags.filter(t => t !== tagToDelete.name && t !== tagToDelete.id)
-    })));
+    }));
+    setLeads(updatedLeads);
+    persistResourceDirectly('leads', updatedLeads);
   };
 
   const assignTagsToLeads = (leadIds: string[], tagNames: string[]) => {
-    setLeads(prev => prev.map(l => {
+    const updatedLeads = leads.map(l => {
       if (leadIds.includes(l.id)) {
         const uniqueTags = Array.from(new Set([...l.tags, ...tagNames]));
         return { ...l, tags: uniqueTags };
       }
       return l;
-    }));
+    });
+    setLeads(updatedLeads);
+    persistResourceDirectly('leads', updatedLeads);
     addNotification({
       title: `Tags Assigned to ${leadIds.length} Leads 🏷️`,
       message: `Updated tags: ${tagNames.join(', ')}`,
@@ -1210,13 +1290,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (cleanTargetTag) {
       setLeadTags(prev => {
         if (!prev.some(t => t.name.toLowerCase() === cleanTargetTag.toLowerCase())) {
-          return [...prev, {
+          const updated = [...prev, {
             id: `tag-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
             name: cleanTargetTag,
             color: 'cyan',
             description: 'Custom imported lead tag',
             count: 0
           }];
+          persistResourceDirectly('leadTags', updated);
+          return updated;
         }
         return prev;
       });
@@ -1269,7 +1351,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
 
-    setLeads(prev => [...prepared, ...prev]);
+    const updatedLeads = [...prepared, ...leads];
+    setLeads(updatedLeads);
+    persistResourceDirectly('leads', updatedLeads);
     addNotification({
       title: `Added ${prepared.length} Verified Leads ✨`,
       message: `Assigned tag "${cleanTargetTag || prepared[0]?.tags?.[0] || 'Imported Leads'}" with verified domain health pings.`,
@@ -1279,11 +1363,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateLead = (id: string, updates: Partial<Lead>) => {
-    setLeads(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l));
+    const updatedLeads = leads.map(l => l.id === id ? { ...l, ...updates } : l);
+    setLeads(updatedLeads);
+    persistResourceDirectly('leads', updatedLeads);
   };
 
   const deleteLeadToTrash = (id: string) => {
-    setLeads(prev => prev.map(l => l.id === id ? { ...l, isTrash: true, deletedAt: new Date().toISOString() } : l));
+    const updatedLeads = leads.map(l => l.id === id ? { ...l, isTrash: true, deletedAt: new Date().toISOString() } : l);
+    setLeads(updatedLeads);
+    persistResourceDirectly('leads', updatedLeads);
     addNotification({
       title: 'Lead moved to Trash 🗑️',
       message: 'You can restore this lead anytime from the Trash section.',
@@ -1293,15 +1381,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const restoreLead = (id: string) => {
-    setLeads(prev => prev.map(l => l.id === id ? { ...l, isTrash: false, deletedAt: undefined } : l));
+    const updatedLeads = leads.map(l => l.id === id ? { ...l, isTrash: false, deletedAt: undefined } : l);
+    setLeads(updatedLeads);
+    persistResourceDirectly('leads', updatedLeads);
   };
 
   const permanentDeleteLead = (id: string) => {
-    setLeads(prev => prev.filter(l => l.id !== id));
+    const updatedLeads = leads.filter(l => l.id !== id);
+    setLeads(updatedLeads);
+    persistResourceDirectly('leads', updatedLeads);
   };
 
   const bulkDeleteLeads = (ids: string[]) => {
-    setLeads(prev => prev.map(l => ids.includes(l.id) ? { ...l, isTrash: true, deletedAt: new Date().toISOString() } : l));
+    const updatedLeads = leads.map(l => ids.includes(l.id) ? { ...l, isTrash: true, deletedAt: new Date().toISOString() } : l);
+    setLeads(updatedLeads);
+    persistResourceDirectly('leads', updatedLeads);
     addNotification({
       title: `Moved ${ids.length} leads to Trash 🗑️`,
       message: 'Items can be restored from the Trash tab.',
@@ -1311,11 +1405,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const bulkRestoreLeads = (ids: string[]) => {
-    setLeads(prev => prev.map(l => ids.includes(l.id) ? { ...l, isTrash: false, deletedAt: undefined } : l));
+    const updatedLeads = leads.map(l => ids.includes(l.id) ? { ...l, isTrash: false, deletedAt: undefined } : l);
+    setLeads(updatedLeads);
+    persistResourceDirectly('leads', updatedLeads);
   };
 
   const bulkPermanentDeleteLeads = (ids: string[]) => {
-    setLeads(prev => prev.filter(l => !ids.includes(l.id)));
+    const updatedLeads = leads.filter(l => !ids.includes(l.id));
+    setLeads(updatedLeads);
+    persistResourceDirectly('leads', updatedLeads);
   };
 
   const verifyLeadWebsite = async (id: string) => {
@@ -1476,7 +1574,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       lastRunAt: new Date().toISOString().split('T')[0],
       isTrash: false
     };
-    setCampaigns(prev => [newCamp, ...prev]);
+    const updated = [newCamp, ...campaigns];
+    setCampaigns(updated);
+    persistResourceDirectly('campaigns', updated);
     addNotification({
       title: `Campaign "${newCamp.name}" Created 🚀`,
       message: `Targeting ${newCamp.totalLeads} leads with automated sequence.`,
@@ -1487,11 +1587,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateCampaign = (id: string, updates: Partial<Campaign>) => {
-    setCampaigns(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    const updated = campaigns.map(c => c.id === id ? { ...c, ...updates } : c);
+    setCampaigns(updated);
+    persistResourceDirectly('campaigns', updated);
   };
 
   const toggleCampaignStatus = (id: string) => {
-    setCampaigns(prev => prev.map(c => {
+    const updated = campaigns.map(c => {
       if (c.id === id) {
         const nextStatus = c.status === 'running' ? 'paused' : 'running';
         addNotification({
@@ -1503,11 +1605,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { ...c, status: nextStatus };
       }
       return c;
-    }));
+    });
+    setCampaigns(updated);
+    persistResourceDirectly('campaigns', updated);
   };
 
   const deleteCampaign = (id: string) => {
-    setCampaigns(prev => prev.map(c => c.id === id ? { ...c, isTrash: true, deletedAt: new Date().toISOString() } : c));
+    const updated = campaigns.map(c => c.id === id ? { ...c, isTrash: true, deletedAt: new Date().toISOString() } : c);
+    setCampaigns(updated);
+    persistResourceDirectly('campaigns', updated);
     addNotification({
       title: 'Campaign Moved to Trash 🗑️',
       message: 'Campaign sequence moved to Trash. You can restore it anytime.',
@@ -1517,7 +1623,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const restoreCampaign = (id: string) => {
-    setCampaigns(prev => prev.map(c => c.id === id ? { ...c, isTrash: false, deletedAt: undefined } : c));
+    const updated = campaigns.map(c => c.id === id ? { ...c, isTrash: false, deletedAt: undefined } : c);
+    setCampaigns(updated);
+    persistResourceDirectly('campaigns', updated);
     addNotification({
       title: 'Campaign Restored 🚀',
       message: 'Campaign sequence restored to active dashboard.',
@@ -1527,7 +1635,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const permanentDeleteCampaign = (id: string) => {
-    setCampaigns(prev => prev.filter(c => c.id !== id));
+    const updated = campaigns.filter(c => c.id !== id);
+    setCampaigns(updated);
+    persistResourceDirectly('campaigns', updated);
     addNotification({
       title: 'Campaign Purged 🗑️',
       message: 'Campaign sequence permanently removed.',
@@ -1536,11 +1646,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const bulkRestoreCampaigns = (ids: string[]) => {
-    setCampaigns(prev => prev.map(c => ids.includes(c.id) ? { ...c, isTrash: false, deletedAt: undefined } : c));
+    const updated = campaigns.map(c => ids.includes(c.id) ? { ...c, isTrash: false, deletedAt: undefined } : c);
+    setCampaigns(updated);
+    persistResourceDirectly('campaigns', updated);
   };
 
   const bulkPermanentDeleteCampaigns = (ids: string[]) => {
-    setCampaigns(prev => prev.filter(c => !ids.includes(c.id)));
+    const updated = campaigns.filter(c => !ids.includes(c.id));
+    setCampaigns(updated);
+    persistResourceDirectly('campaigns', updated);
   };
 
   const launchQuickFollowUp = (days: '7d' | '14d' | '30d') => {
@@ -1601,7 +1715,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: `cat-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       isCustom: true
     };
-    setTemplateCategories(prev => [newCat, ...prev]);
+    const updatedCats = [newCat, ...templateCategories];
+    setTemplateCategories(updatedCats);
+    persistResourceDirectly('templateCategories', updatedCats);
     addNotification({
       title: `Category "${newCat.label}" Added 📁`,
       message: 'You can now organize outreach templates under this custom category.',
@@ -1611,7 +1727,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteTemplateCategory = (id: string) => {
-    setTemplateCategories(prev => prev.filter(c => c.id !== id));
+    const updatedCats = templateCategories.filter(c => c.id !== id);
+    setTemplateCategories(updatedCats);
+    persistResourceDirectly('templateCategories', updatedCats);
   };
 
   const addEmailTemplate = (templateData: Omit<EmailTemplate, 'id' | 'usageCount' | 'replyRatePercent' | 'createdAt'>): EmailTemplate => {
@@ -1622,7 +1740,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       replyRatePercent: 0,
       createdAt: new Date().toISOString().split('T')[0]
     };
-    setEmailTemplates(prev => [newTmpl, ...prev]);
+    const updatedTemplates = [newTmpl, ...emailTemplates];
+    setEmailTemplates(updatedTemplates);
+    persistResourceDirectly('emailTemplates', updatedTemplates);
     addNotification({
       title: `Template "${newTmpl.title}" Saved 📝`,
       message: 'Template is ready to use in campaigns and single mailer.',
@@ -1632,11 +1752,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateEmailTemplate = (id: string, updates: Partial<EmailTemplate>) => {
-    setEmailTemplates(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+    const updatedTemplates = emailTemplates.map(t => t.id === id ? { ...t, ...updates } : t);
+    setEmailTemplates(updatedTemplates);
+    persistResourceDirectly('emailTemplates', updatedTemplates);
   };
 
   const deleteEmailTemplate = (id: string) => {
-    setEmailTemplates(prev => prev.map(t => t.id === id ? { ...t, isTrash: true, deletedAt: new Date().toISOString() } : t));
+    const updatedTemplates = emailTemplates.map(t => t.id === id ? { ...t, isTrash: true, deletedAt: new Date().toISOString() } : t);
+    setEmailTemplates(updatedTemplates);
+    persistResourceDirectly('emailTemplates', updatedTemplates);
     addNotification({
       title: 'Template Moved to Trash 🗑️',
       message: 'Template moved to Trash. You can restore it anytime.',
@@ -1646,7 +1770,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const restoreEmailTemplate = (id: string) => {
-    setEmailTemplates(prev => prev.map(t => t.id === id ? { ...t, isTrash: false, deletedAt: undefined } : t));
+    const updatedTemplates = emailTemplates.map(t => t.id === id ? { ...t, isTrash: false, deletedAt: undefined } : t);
+    setEmailTemplates(updatedTemplates);
+    persistResourceDirectly('emailTemplates', updatedTemplates);
     addNotification({
       title: 'Template Restored 📝',
       message: 'Template returned to active library.',
@@ -1656,7 +1782,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const permanentDeleteEmailTemplate = (id: string) => {
-    setEmailTemplates(prev => prev.filter(t => t.id !== id));
+    const updatedTemplates = emailTemplates.filter(t => t.id !== id);
+    setEmailTemplates(updatedTemplates);
+    persistResourceDirectly('emailTemplates', updatedTemplates);
   };
 
   // SMTP Relay Actions
@@ -1669,7 +1797,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isConnected: true,
       isTrash: false,
     };
-    setSmtpAccounts(prev => [newAcc, ...prev]);
+    const updatedSmtp = [newAcc, ...smtpAccounts];
+    setSmtpAccounts(updatedSmtp);
+    persistResourceDirectly('smtpAccounts', updatedSmtp);
     addNotification({
       title: `Outbound SMTP Relay Connected ⚡`,
       message: `Connected ${newAcc.name} (${newAcc.host}:${newAcc.port}). SPF & DKIM verified.`,
@@ -1680,11 +1810,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateSMTPAccount = (id: string, updates: Partial<SMTPAccount>) => {
-    setSmtpAccounts(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+    const updatedSmtp = smtpAccounts.map(s => s.id === id ? { ...s, ...updates } : s);
+    setSmtpAccounts(updatedSmtp);
+    persistResourceDirectly('smtpAccounts', updatedSmtp);
   };
 
   const deleteSMTPAccount = (id: string) => {
-    setSmtpAccounts(prev => prev.map(s => s.id === id ? { ...s, isTrash: true, deletedAt: new Date().toISOString() } : s));
+    const updatedSmtp = smtpAccounts.map(s => s.id === id ? { ...s, isTrash: true, deletedAt: new Date().toISOString() } : s);
+    setSmtpAccounts(updatedSmtp);
+    persistResourceDirectly('smtpAccounts', updatedSmtp);
     addNotification({
       title: 'SMTP Account Moved to Trash 🗑️',
       message: 'You can restore it anytime.',
@@ -1694,7 +1828,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const restoreSMTPAccount = (id: string) => {
-    setSmtpAccounts(prev => prev.map(s => s.id === id ? { ...s, isTrash: false, deletedAt: undefined } : s));
+    const updatedSmtp = smtpAccounts.map(s => s.id === id ? { ...s, isTrash: false, deletedAt: undefined } : s);
+    setSmtpAccounts(updatedSmtp);
+    persistResourceDirectly('smtpAccounts', updatedSmtp);
     addNotification({
       title: 'SMTP Account Restored ⚡',
       message: 'Relay account restored to active outbound pool.',
@@ -1704,7 +1840,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const permanentDeleteSMTPAccount = (id: string) => {
-    setSmtpAccounts(prev => prev.filter(s => s.id !== id));
+    const updatedSmtp = smtpAccounts.filter(s => s.id !== id);
+    setSmtpAccounts(updatedSmtp);
+    persistResourceDirectly('smtpAccounts', updatedSmtp);
   };
 
   const testSMTPConnection = async (id: string): Promise<boolean> => {
@@ -1720,11 +1858,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = await res.json();
       const isSuccess = Boolean(res.ok && data.success);
 
-      setSmtpAccounts(prev => prev.map(s => s.id === id ? {
+      const updatedSmtp = smtpAccounts.map(s => s.id === id ? {
         ...s,
         healthScore: isSuccess ? 99 : 0,
         isConnected: isSuccess
-      } : s));
+      } : s);
+      setSmtpAccounts(updatedSmtp);
+      persistResourceDirectly('smtpAccounts', updatedSmtp);
 
       addNotification({
         title: isSuccess ? 'SMTP Connection Verified 🟢' : 'SMTP Handshake Error 🔴',
@@ -2299,7 +2439,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deductAiTokens = (tokensUsed: number) => {
     if (!tokensUsed || tokensUsed <= 0) return;
     const cleanTokens = Math.max(1, Math.round(tokensUsed));
-    setCurrentUser(prev => {
+    setCurrentUserState(prev => {
       const updatedCredits = Math.max(0, (prev.aiCredits || 0) - cleanTokens);
       return {
         ...prev,
@@ -2357,12 +2497,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     sentEmails.filter(s => s.isTrash).length;
 
   const emptyAllTrash = () => {
-    setLeads(prev => prev.filter(l => !l.isTrash));
-    setThreads(prev => prev.filter(t => !t.isTrash));
-    setSmtpAccounts(prev => prev.filter(s => !s.isTrash));
-    setCampaigns(prev => prev.filter(c => !c.isTrash));
-    setEmailTemplates(prev => prev.filter(t => !t.isTrash));
-    setSentEmails(prev => prev.filter(s => !s.isTrash));
+    const cleanLeads = leads.filter(l => !l.isTrash);
+    const cleanThreads = threads.filter(t => !t.isTrash);
+    const cleanSmtp = smtpAccounts.filter(s => !s.isTrash);
+    const cleanCampaigns = campaigns.filter(c => !c.isTrash);
+    const cleanTemplates = emailTemplates.filter(t => !t.isTrash);
+    const cleanSent = sentEmails.filter(s => !s.isTrash);
+
+    setLeads(cleanLeads);
+    setThreads(cleanThreads);
+    setSmtpAccounts(cleanSmtp);
+    setCampaigns(cleanCampaigns);
+    setEmailTemplates(cleanTemplates);
+    setSentEmails(cleanSent);
+
+    persistResourceDirectly('leads', cleanLeads);
+    persistResourceDirectly('threads', cleanThreads);
+    persistResourceDirectly('smtpAccounts', cleanSmtp);
+    persistResourceDirectly('campaigns', cleanCampaigns);
+    persistResourceDirectly('emailTemplates', cleanTemplates);
+    persistResourceDirectly('sentEmails', cleanSent);
+
     addNotification({
       title: 'Trash Emptied 🗑️',
       message: 'All trashed leads, threads, SMTP relays, campaigns, templates, and sent logs permanently erased.',
@@ -2617,6 +2772,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setMinedLeads,
         loadUserWorkspace,
         saveWorkspaceToDatabase,
+        persistResourceDirectly,
         isWorkspaceLoading,
         syncStatus,
         emptyAllTrash,

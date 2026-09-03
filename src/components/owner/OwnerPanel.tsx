@@ -263,7 +263,7 @@ export const OwnerPanel: React.FC = () => {
         <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-1">
           <div className="text-[11px] font-bold text-slate-400 uppercase">AI Token Balance</div>
           <div className="text-xl font-black text-purple-400 font-mono">{currentUser.aiCredits} Credits</div>
-          <div className="text-[10px] text-purple-300">Gemini 3.7 Pro Access</div>
+          <div className="text-[10px] text-purple-300">Google Gemini 2.0 Flash Access</div>
         </div>
       </div>
 
@@ -636,7 +636,7 @@ export const OwnerPanel: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-300">Gemini 3.7 Flash Gateway</span>
+                <span className="font-bold text-slate-300">Google Gemini 2.0 Flash Gateway</span>
                 <span className="text-emerald-400 font-bold flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> Operational (100%)
                 </span>

@@ -83,9 +83,12 @@ app.post('/api/users/sync', (req, res) => {
 
 // Endpoint: Send OTP to user's real email for Password Reset
 app.post('/api/auth/send-otp', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
   try {
-    const { email } = req.body;
-    if (!email || !email.includes('@')) {
+    const { email } = req.body || {};
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
       return res.status(400).json({ success: false, error: 'Valid registered email address is required' });
     }
 
@@ -211,14 +214,23 @@ app.post('/api/auth/send-otp', async (req, res) => {
       otpCode // Included in response for seamless local verification & dev preview
     });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err?.message || 'Failed to send OTP code' });
+    console.error('Failed to send OTP:', err);
+    return res.status(500).json({ success: false, error: 'Failed to send OTP' });
   }
+});
+
+app.all('/api/auth/send-otp', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  return res.status(405).json({ success: false, error: 'Method not allowed. Please use POST.' });
 });
 
 // Endpoint: Verify OTP and update password
 app.post('/api/auth/reset-password', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
   try {
-    const { email, otp, newPassword } = req.body;
+    const { email, otp, newPassword } = req.body || {};
     if (!email || !otp || !newPassword) {
       return res.status(400).json({ success: false, error: 'Email, OTP, and new password are required' });
     }
@@ -257,50 +269,238 @@ app.post('/api/auth/reset-password', (req, res) => {
       message: `Password for ${cleanEmail} successfully updated.`
     });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err?.message || 'Password update failed' });
+    console.error('Failed to reset password:', err);
+    return res.status(500).json({ success: false, error: 'Failed to reset password' });
   }
 });
 
-app.get('/api/user-data/:email', (req, res) => {
+app.all('/api/auth/reset-password', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
-  try {
-    const email = (req.params.email || '').trim().toLowerCase();
-    if (!email) return res.status(400).json({ success: false, error: 'Email is required' });
+  return res.status(405).json({ success: false, error: 'Method not allowed. Please use POST.' });
+});
 
-    const filePath = getUserDataFilePath(email);
+// Central Database Storage Helpers
+function readUserWorkspace(email: string): any | null {
+  try {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const filePath = getUserDataFilePath(cleanEmail);
     if (fs.existsSync(filePath)) {
       const content = fs.readFileSync(filePath, 'utf-8');
-      try {
-        const parsed = JSON.parse(content);
-        return res.json({ success: true, data: parsed });
-      } catch (parseErr) {
-        console.error('Failed to parse user data file for', email, parseErr);
-        return res.json({ success: true, data: null });
-      }
+      return JSON.parse(content);
     }
-    return res.json({ success: true, data: null });
+    return null;
+  } catch (err) {
+    console.error('Failed to read workspace from database for:', email, err);
+    return null;
+  }
+}
+
+function writeUserWorkspace(email: string, data: any): boolean {
+  try {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const filePath = getUserDataFilePath(cleanEmail);
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    // Atomic write to prevent partial reads or corruptions
+    const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 7)}`;
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tempPath, filePath);
+    return true;
+  } catch (err) {
+    console.error('Failed to persist workspace to database for:', email, err);
+    return false;
+  }
+}
+
+// 1. GET /api/user-data/:email - Login Hydration & Real-time State Fetch
+app.get('/api/user-data/:email', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  try {
+    const rawEmail = req.params.email || '';
+    const email = decodeURIComponent(rawEmail).trim().toLowerCase();
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Email is required for workspace access' });
+    }
+
+    const workspace = readUserWorkspace(email);
+    return res.json({
+      success: true,
+      email,
+      data: workspace,
+      retrievedAt: new Date().toISOString()
+    });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: 'Failed to retrieve user workspace' });
+    console.error('Workspace retrieval error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to retrieve user workspace from database' });
   }
 });
 
+// 2. POST /api/user-data/:email - Full Workspace Save / Sync
 app.post('/api/user-data/:email', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
   try {
-    const email = (req.params.email || '').trim().toLowerCase();
-    if (!email) return res.status(400).json({ success: false, error: 'Email is required' });
+    const rawEmail = req.params.email || '';
+    const email = decodeURIComponent(rawEmail).trim().toLowerCase();
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Email is required for workspace persistence' });
+    }
 
     const { data } = req.body;
     if (!data || typeof data !== 'object') {
       return res.status(400).json({ success: false, error: 'Valid workspace data object required' });
     }
 
-    const filePath = getUserDataFilePath(email);
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
-    return res.json({ success: true, savedAt: new Date().toISOString() });
+    const existing = readUserWorkspace(email) || {};
+    const mergedWorkspace = {
+      ...existing,
+      ...data,
+      email,
+      updatedAt: new Date().toISOString()
+    };
+
+    const written = writeUserWorkspace(email, mergedWorkspace);
+    if (!written) {
+      return res.status(500).json({ success: false, error: 'Failed writing workspace file' });
+    }
+
+    return res.json({
+      success: true,
+      email,
+      savedAt: mergedWorkspace.updatedAt
+    });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: 'Failed to persist user workspace' });
+    console.error('Workspace save error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to persist user workspace to database' });
   }
+});
+
+// 3. POST /api/user-data/:email/resource/:resource - Granular Resource Persistence (Direct Database Updates)
+app.post('/api/user-data/:email/resource/:resource', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
+  try {
+    const rawEmail = req.params.email || '';
+    const email = decodeURIComponent(rawEmail).trim().toLowerCase();
+    const resource = (req.params.resource || '').trim();
+
+    if (!email) return res.status(400).json({ success: false, error: 'Email is required' });
+    if (!resource) return res.status(400).json({ success: false, error: 'Resource name is required' });
+
+    const { items } = req.body;
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ success: false, error: `Payload 'items' must be an array for resource ${resource}` });
+    }
+
+    const workspace = readUserWorkspace(email) || {
+      leads: [],
+      leadTags: [],
+      campaigns: [],
+      emailTemplates: [],
+      smtpAccounts: [],
+      threads: [],
+      sentEmails: []
+    };
+
+    workspace[resource] = items;
+    workspace.email = email;
+    workspace.updatedAt = new Date().toISOString();
+
+    const written = writeUserWorkspace(email, workspace);
+    if (!written) {
+      return res.status(500).json({ success: false, error: `Failed persisting ${resource} to database` });
+    }
+
+    return res.json({
+      success: true,
+      email,
+      resource,
+      count: items.length,
+      savedAt: workspace.updatedAt
+    });
+  } catch (err: any) {
+    console.error('Resource direct persistence error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to persist resource to database' });
+  }
+});
+
+// 4. Convenience Resource Endpoints: Leads, Tags, Campaigns, Templates, SMTP
+app.post('/api/user-data/:email/leads', (req, res) => {
+  const rawEmail = req.params.email || '';
+  const email = decodeURIComponent(rawEmail).trim().toLowerCase();
+  const { leads } = req.body;
+  if (!email || !Array.isArray(leads)) {
+    return res.status(400).json({ success: false, error: 'Email and leads array required' });
+  }
+  const workspace = readUserWorkspace(email) || {};
+  workspace.leads = leads;
+  workspace.updatedAt = new Date().toISOString();
+  writeUserWorkspace(email, workspace);
+  return res.json({ success: true, count: leads.length, savedAt: workspace.updatedAt });
+});
+
+app.post('/api/user-data/:email/tags', (req, res) => {
+  const rawEmail = req.params.email || '';
+  const email = decodeURIComponent(rawEmail).trim().toLowerCase();
+  const { leadTags } = req.body;
+  if (!email || !Array.isArray(leadTags)) {
+    return res.status(400).json({ success: false, error: 'Email and leadTags array required' });
+  }
+  const workspace = readUserWorkspace(email) || {};
+  workspace.leadTags = leadTags;
+  workspace.updatedAt = new Date().toISOString();
+  writeUserWorkspace(email, workspace);
+  return res.json({ success: true, count: leadTags.length, savedAt: workspace.updatedAt });
+});
+
+app.post('/api/user-data/:email/campaigns', (req, res) => {
+  const rawEmail = req.params.email || '';
+  const email = decodeURIComponent(rawEmail).trim().toLowerCase();
+  const { campaigns } = req.body;
+  if (!email || !Array.isArray(campaigns)) {
+    return res.status(400).json({ success: false, error: 'Email and campaigns array required' });
+  }
+  const workspace = readUserWorkspace(email) || {};
+  workspace.campaigns = campaigns;
+  workspace.updatedAt = new Date().toISOString();
+  writeUserWorkspace(email, workspace);
+  return res.json({ success: true, count: campaigns.length, savedAt: workspace.updatedAt });
+});
+
+app.post('/api/user-data/:email/templates', (req, res) => {
+  const rawEmail = req.params.email || '';
+  const email = decodeURIComponent(rawEmail).trim().toLowerCase();
+  const { emailTemplates } = req.body;
+  if (!email || !Array.isArray(emailTemplates)) {
+    return res.status(400).json({ success: false, error: 'Email and emailTemplates array required' });
+  }
+  const workspace = readUserWorkspace(email) || {};
+  workspace.emailTemplates = emailTemplates;
+  workspace.updatedAt = new Date().toISOString();
+  writeUserWorkspace(email, workspace);
+  return res.json({ success: true, count: emailTemplates.length, savedAt: workspace.updatedAt });
+});
+
+app.post('/api/user-data/:email/smtp', (req, res) => {
+  const rawEmail = req.params.email || '';
+  const email = decodeURIComponent(rawEmail).trim().toLowerCase();
+  const { smtpAccounts } = req.body;
+  if (!email || !Array.isArray(smtpAccounts)) {
+    return res.status(400).json({ success: false, error: 'Email and smtpAccounts array required' });
+  }
+  const workspace = readUserWorkspace(email) || {};
+  workspace.smtpAccounts = smtpAccounts;
+  workspace.updatedAt = new Date().toISOString();
+  writeUserWorkspace(email, workspace);
+  return res.json({ success: true, count: smtpAccounts.length, savedAt: workspace.updatedAt });
 });
 
 // Health check endpoint
@@ -309,15 +509,18 @@ app.get('/api/health', (_req, res) => {
 });
 
 // Initialize Google Gemini SDK
-const apiKey = process.env.GEMINI_API_KEY || '';
-const ai = apiKey ? new GoogleGenAI({
-  apiKey,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
+function getGeminiClient(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || '';
+  if (!apiKey) return null;
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
     }
-  }
-}) : null;
+  });
+}
 
 // Resilient Gemini model caller with multi-model fallback & retries
 const FALLBACK_MODELS = [
@@ -338,6 +541,7 @@ interface GeminiCallResult {
 }
 
 async function callGemini(contents: string, config?: any, requestedModel?: string): Promise<GeminiCallResult | null> {
+  const ai = getGeminiClient();
   if (!ai) return null;
 
   let targetModel = requestedModel || 'gemini-2.0-flash';
@@ -448,7 +652,7 @@ app.post('/api/leads/generate', async (req, res) => {
       ? selectedDirectories
       : ['google_search', 'google_maps', 'crunchbase'];
 
-    if (ai) {
+    if (getGeminiClient()) {
       try {
         const prompt = `You are a world-class B2B Lead Intelligence Engine and Deep Lead Researcher for VisualSky.
 Generate a list of exactly ${count} highly realistic, active, and verified leads for:
@@ -621,7 +825,7 @@ app.post('/api/gemini/chat', async (req, res) => {
   try {
     const { messages = [], systemInstruction = '', model = 'gemini-2.0-flash' } = req.body;
     
-    if (ai) {
+    if (getGeminiClient()) {
       try {
         const fullPrompt = `${systemInstruction ? `System Instructions: ${systemInstruction}\n\n` : ''}User Conversation History:\n${messages.map((m: any) => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n')}\n\nASSISTANT:`;
         
@@ -710,7 +914,7 @@ Respond ONLY with valid JSON in this exact structure:
   "body": "Hi {{name}},\\n\\nNoticed your recent work with {{company}} in ${niche}.\\n\\nAre you currently exploring automated deliverability to get 99% primary inbox placement?\\n\\nWould you be open to a 2-minute video breakdown this Thursday?\\n\\nBest regards,\\n${senderName}"
 }`;
 
-    if (ai) {
+    if (getGeminiClient()) {
       try {
         const geminiResult = await callGemini(systemPrompt, {
           responseMimeType: 'application/json',
@@ -797,7 +1001,7 @@ Respond ONLY in JSON format:
   "improvements": ["Removed aggressive trigger words", "Enhanced conversational flow", "Shortened CTA to reduce spam filters"]
 }`;
 
-    if (ai) {
+    if (getGeminiClient()) {
       try {
         const geminiResult = await callGemini(systemPrompt, {
           responseMimeType: 'application/json',
@@ -1408,6 +1612,12 @@ app.post('/api/smtp/imap-sync', async (req, res) => {
       error: `IMAP Connection Error: ${err?.message || 'Failed to authenticate with IMAP server'}`
     });
   }
+});
+
+// Catch-all for undefined API endpoints to ensure they always return structured JSON, never HTML
+app.all('/api/*', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  return res.status(404).json({ success: false, error: `API endpoint ${req.method} ${req.path} not found` });
 });
 
 // Vite / Production handler

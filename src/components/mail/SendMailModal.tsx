@@ -38,7 +38,7 @@ export const SendMailModal: React.FC<SendMailModalProps> = ({
   defaultRecipientEmail = '',
   defaultRecipientName = ''
 }) => {
-  const { leads, smtpAccounts, currentUser, addNotification, sendDirectEmail, emailTemplates } = useApp();
+  const { leads, smtpAccounts, currentUser, addNotification, sendDirectEmail, emailTemplates, deductAiTokens } = useApp();
 
   const [recipientEmail, setRecipientEmail] = useState<string>(() => {
     return defaultRecipientEmail || sessionStorage.getItem('visualsky_sendmail_draft_email') || '';
@@ -143,16 +143,19 @@ export const SendMailModal: React.FC<SendMailModalProps> = ({
 
       const data = await res.json();
       if (data.success && data.subject && data.body) {
+        const tokensUsed = data.usage?.totalTokens || 140;
+        deductAiTokens(tokensUsed);
         setSubject(data.subject);
         setBody(data.body);
         confetti({ particleCount: 40, spread: 60 });
         addNotification({
           title: 'AI Outreach Generated ✨',
-          message: `Drafted personalized cold email for ${recipientName || 'recipient'} with ${aiTone} tone.`,
+          message: `Drafted personalized cold email for ${recipientName || 'recipient'} (${tokensUsed} AI tokens).`,
           type: 'system'
         });
       }
     } catch {
+      deductAiTokens(110);
       // Fallback
       setSubject(`quick thought for {{company}}`);
       setBody(`Hi {{name}},\n\nI was checking out {{company}} and loved your recent traction.\n\nWe help teams achieve guaranteed 99.8% inbox deliverability on cold outreach.\n\nWould you be open to a 2-minute video overview this week?\n\nBest regards,\n${currentUser.name || 'Outreach Team'}`);
@@ -179,16 +182,19 @@ export const SendMailModal: React.FC<SendMailModalProps> = ({
 
       const data = await res.json();
       if (data.success && data.optimizedBody) {
+        const tokensUsed = data.usage?.totalTokens || 115;
+        deductAiTokens(tokensUsed);
         if (data.optimizedSubject) setSubject(data.optimizedSubject);
         setBody(data.optimizedBody);
         confetti({ particleCount: 30, spread: 50 });
         addNotification({
           title: 'Spam Score Optimized 🛡️',
-          message: 'Removed spam triggers and boosted Primary Inbox score to 100%.',
+          message: `Removed spam triggers and boosted Primary Inbox score to 100% (${tokensUsed} AI tokens).`,
           type: 'system'
         });
       }
     } catch {
+      deductAiTokens(80);
       // Fallback
       setSubject(prev => prev.replace(/FREE|100%|GUARANTEED/gi, 'Quick Note'));
     } finally {
@@ -275,7 +281,7 @@ export const SendMailModal: React.FC<SendMailModalProps> = ({
                   Gemini AI Outreach Copilot & Writer
                 </span>
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                  Gemini 3.7 Flash
+                  Gemini 2.0 Flash
                 </span>
               </div>
 

@@ -1,0 +1,16 @@
+{
+  "leads": [
+    {
+      "id": "lead-test-1",
+      "name": "Test Lead"
+    }
+  ],
+  "leadTags": [
+    {
+      "id": "tag-1",
+      "name": "VIP"
+    }
+  ],
+  "email": "test@example.com",
+  "updatedAt": "2026-09-03T18:16:58.251Z"
+}

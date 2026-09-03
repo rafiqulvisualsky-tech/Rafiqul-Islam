@@ -77,7 +77,7 @@ export const BDT_CLIENT_PLANS = [
     features: [
       '10,000 Verified Outbound Leads',
       '10 SMTP Multi-Domain Relays',
-      'Gemini 3.7 AI Outreach Copilot (2,500 Credits)',
+      'Gemini 2.0 AI Outreach Copilot (2,500 Credits)',
       '7d / 14d / 30d Automated Sequences',
       '99.8% Primary Inbox Landing Radar'
     ]
@@ -154,6 +154,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 }) => {
   const { 
     loginUser,
+    loadUserWorkspace,
     setCurrentUser, 
     allUsers, 
     setAllUsers, 
@@ -381,6 +382,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return [googleUser, ...filtered];
       });
       loginUser(googleUser);
+      loadUserWorkspace(googleUser.email);
 
       setIsLoading(false);
       addNotification({
@@ -451,6 +453,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return [authenticatedUser, ...filtered];
       });
       loginUser(authenticatedUser);
+      loadUserWorkspace(authenticatedUser.email);
 
       setIsLoading(false);
       addNotification({
@@ -552,6 +555,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       setAllUsers(prev => [newAgencyUser, ...prev]);
       loginUser(newAgencyUser);
+      loadUserWorkspace(newAgencyUser.email);
 
       setIsLoading(false);
       addNotification({
@@ -640,6 +644,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       setAllUsers(prev => [newClientUser, ...prev]);
       loginUser(newClientUser);
+      loadUserWorkspace(newClientUser.email);
 
       setIsLoading(false);
       addNotification({
@@ -651,6 +656,53 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } catch (err: any) {
       setIsLoading(false);
       setErrorMessage(err?.message || 'Payment verification failed. Please check the TrxID.');
+    }
+  };
+
+  // Defensive API response parser to prevent "Unexpected token <" or invalid JSON exceptions
+  const parseSafeApiResponse = async (res: Response): Promise<{ ok: boolean; data: any; errorMessage?: string }> => {
+    const contentType = res.headers.get('content-type') || '';
+    let responseText = '';
+    try {
+      responseText = await res.text();
+    } catch {
+      return { ok: false, data: null, errorMessage: 'Network read error. Please check your internet connection.' };
+    }
+
+    // Inspect Content-Type header to ensure response is JSON
+    if (!contentType.toLowerCase().includes('application/json')) {
+      let friendlyError = 'The server returned an unexpected response format. Please try again.';
+      if (
+        responseText.includes('The page cannot be found') ||
+        responseText.includes('404') ||
+        responseText.includes('Cannot POST') ||
+        responseText.includes('Cannot GET')
+      ) {
+        friendlyError = 'The verification service endpoint was not reached on the server. Please try again.';
+      } else if (res.status >= 500) {
+        friendlyError = 'The verification service encountered a server error. Please try again in a few moments.';
+      } else if (res.status === 404) {
+        friendlyError = 'Verification endpoint was not found on the server. Please contact support.';
+      }
+      return { ok: false, data: null, errorMessage: friendlyError };
+    }
+
+    try {
+      const data = JSON.parse(responseText);
+      if (!res.ok || data?.success === false) {
+        return {
+          ok: false,
+          data,
+          errorMessage: data?.error || (res.status === 404 ? 'Resource not found' : 'Request failed')
+        };
+      }
+      return { ok: true, data };
+    } catch {
+      return {
+        ok: false,
+        data: null,
+        errorMessage: 'Unable to parse server response. Please try again.'
+      };
     }
   };
 
@@ -671,13 +723,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       // Trigger real server-side email dispatch with 6-digit OTP
       const res = await fetch('/api/auth/send-otp', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify({ email: targetEmail })
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to dispatch password reset code.');
+      const { ok, data, errorMessage: apiError } = await parseSafeApiResponse(res);
+      if (!ok || !data?.success) {
+        throw new Error(apiError || data?.error || 'Failed to dispatch password reset code.');
       }
 
       if (data.otpCode) {
@@ -701,7 +756,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       });
     } catch (err: any) {
       setIsLoading(false);
-      setErrorMessage(err?.message || 'Failed to send password reset code.');
+      const cleanError = err?.message?.includes('JSON')
+        ? 'Verification service response was invalid. Please try again.'
+        : (err?.message || 'Failed to send password reset code.');
+      setErrorMessage(cleanError);
+      addNotification({
+        title: 'Reset Code Error ⚠️',
+        message: cleanError,
+        type: 'warning'
+      });
     }
   };
 
@@ -713,11 +776,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const res = await fetch('/api/auth/send-otp', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify({ email: targetEmail })
       });
-      const data = await res.json();
+      const { ok, data, errorMessage: apiError } = await parseSafeApiResponse(res);
       setIsLoading(false);
+      if (!ok || !data?.success) {
+        throw new Error(apiError || data?.error || 'Failed to resend code.');
+      }
       if (data.otpCode) {
         setGeneratedOtp(data.otpCode);
       }
@@ -735,7 +804,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       });
     } catch (err: any) {
       setIsLoading(false);
-      setErrorMessage(err?.message || 'Failed to resend code.');
+      const cleanError = err?.message?.includes('JSON')
+        ? 'Could not resend verification code. Please try again.'
+        : (err?.message || 'Failed to resend code.');
+      setErrorMessage(cleanError);
+      addNotification({
+        title: 'Resend Failed ⚠️',
+        message: cleanError,
+        type: 'warning'
+      });
     }
   };
 
@@ -829,7 +906,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const res = await fetch('/api/auth/reset-password', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify({
           email: forgotEmail.trim().toLowerCase(),
           otp: finalOtp,
@@ -837,9 +917,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         })
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Invalid or expired verification code.');
+      const { ok, data, errorMessage: apiError } = await parseSafeApiResponse(res);
+      if (!ok || !data?.success) {
+        throw new Error(apiError || data?.error || 'Invalid or expired verification code.');
       }
 
       // Also update local context
@@ -855,7 +935,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       });
     } catch (err: any) {
       setIsLoading(false);
-      setErrorMessage(err?.message || 'Failed to reset password.');
+      const cleanError = err?.message?.includes('JSON')
+        ? 'Password reset service response was invalid. Please try again.'
+        : (err?.message || 'Failed to reset password.');
+      setErrorMessage(cleanError);
+      addNotification({
+        title: 'Reset Password Error ⚠️',
+        message: cleanError,
+        type: 'warning'
+      });
     }
   };
 
@@ -974,7 +1062,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </div>
                   <div className="text-[11px] text-slate-300 flex items-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                    <span>Gemini 3.7 AI Copilot & Miner</span>
+                    <span>Gemini 2.0 AI Copilot & Miner</span>
                   </div>
                   <div className="text-[11px] text-slate-300 flex items-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />

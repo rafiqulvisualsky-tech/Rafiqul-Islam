@@ -740,7 +740,7 @@ export const MainDashboard: React.FC<MainDashboardProps> = ({ onOpenSendMail, on
                   <Sparkles className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-slate-200 group-hover:text-purple-300 transition">AI Lead Miner (Gemini 3.7)</div>
+                  <div className="text-xs font-bold text-slate-200 group-hover:text-purple-300 transition">AI Lead Miner (Gemini 2.0)</div>
                   <div className="text-[10px] text-slate-400">Scrape niche leads with phone & website health</div>
                 </div>
               </div>
