@@ -114,6 +114,14 @@ app.post('/api/auth/send-otp', async (req, res) => {
     let senderAddress = 'security@visualsky.agency';
     let smtpToUse: any = null;
 
+    // 0. Check client-provided SMTP accounts from payload
+    if (Array.isArray(req.body.smtpAccounts)) {
+      const activeSmtp = req.body.smtpAccounts.find((s: any) => s.password && s.host && !s.isTrash);
+      if (activeSmtp) {
+        smtpToUse = activeSmtp;
+      }
+    }
+
     // 1. Check target user's workspace SMTP accounts
     const userDataPath = getUserDataFilePath(cleanEmail);
     if (fs.existsSync(userDataPath)) {
@@ -207,11 +215,8 @@ app.post('/api/auth/send-otp', async (req, res) => {
 
     return res.json({
       success: true,
-      message: sentViaRealSmtp 
-        ? `A 6-digit OTP verification code has been dispatched directly to ${cleanEmail}`
-        : `A 6-digit OTP verification code has been generated for ${cleanEmail}`,
-      sentViaRealSmtp,
-      otpCode // Included in response for seamless local verification & dev preview
+      message: `A 6-digit verification code has been dispatched to ${cleanEmail}. Please check your email inbox.`,
+      sentViaRealSmtp
     });
   } catch (err: any) {
     console.error('Failed to send OTP:', err);

@@ -201,7 +201,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [resendCooldown, setResendCooldown] = useState<number>(0);
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const [generatedOtp, setGeneratedOtp] = useState<string>('');
   const [newResetPassword, setNewResetPassword] = useState<string>('');
   const [confirmResetPassword, setConfirmResetPassword] = useState<string>('');
   const [forgotPhase, setForgotPhase] = useState<'request' | 'verify' | 'success'>('request');
@@ -781,15 +780,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     setIsLoading(true);
 
-    // Generate local 6-digit numeric OTP code as guaranteed resilient fallback
-    const localOtp = Math.floor(100000 + Math.random() * 900000).toString();
-    let otpCodeToUse = localOtp;
-    let sentViaRealSmtp = false;
+    // Retrieve any locally configured SMTP accounts to assist delivery
+    let localSmtpList: any[] = [];
+    try {
+      const stored = localStorage.getItem('visualsky_smtp');
+      if (stored) localSmtpList = JSON.parse(stored);
+    } catch {}
 
     try {
-      // 1. Attempt to dispatch via server-side SMTP endpoint with 4s timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
 
       const res = await fetch('/api/auth/send-otp', {
         method: 'POST',
@@ -797,37 +797,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        body: JSON.stringify({ email: targetEmail }),
+        body: JSON.stringify({ 
+          email: targetEmail,
+          smtpAccounts: localSmtpList
+        }),
         signal: controller.signal
       });
       clearTimeout(timeoutId);
 
       const { ok, data } = await parseSafeApiResponse(res);
-      if (ok && data?.success) {
-        if (data.otpCode) {
-          otpCodeToUse = safeString(data.otpCode);
-        }
-        if (data.sentViaRealSmtp) {
-          sentViaRealSmtp = true;
-        }
+      if (!ok && data?.error) {
+        throw new Error(data.error);
       }
     } catch (err: any) {
-      console.warn('Server send-otp skipped/failed, proceeding with client verification:', err);
+      console.warn('Server send-otp request:', err);
     }
 
-    // 2. If Supabase is active, also trigger Supabase password reset
+    // If Supabase is active, trigger Supabase password reset email
     if (isSupabaseConfigured) {
       try {
         resetPasswordWithSupabase(targetEmail).catch(() => {});
       } catch {}
     }
 
-    // 3. Always transition to Phase 2 (Verify) seamlessly
-    setGeneratedOtp(otpCodeToUse);
-    try {
-      sessionStorage.setItem(`vs_otp_${targetEmail}`, otpCodeToUse);
-    } catch {}
-
+    // Transition to Phase 2 (Verify)
     setForgotOtp('');
     setOtpDigits(['', '', '', '', '', '']);
     setResendCooldown(60);
@@ -835,10 +828,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(false);
     setErrorMessage('');
 
-    const successNotice = sentViaRealSmtp
-      ? `A 6-digit verification code has been dispatched directly to ${targetEmail} via SMTP.`
-      : `A 6-digit verification code (${otpCodeToUse}) has been generated for ${targetEmail}.`;
-
+    // Message purely informs user that code was sent to their email inbox
+    const successNotice = `A 6-digit verification code has been dispatched to ${targetEmail}. Please check your email inbox (and spam folder).`;
     setSuccessMessage(successNotice);
 
     setTimeout(() => {
@@ -846,8 +837,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }, 150);
 
     addNotification({
-      title: 'Verification Code Dispatched 🔐',
-      message: `VisualSky Security Code for ${targetEmail}: ${otpCodeToUse}`,
+      title: 'Verification Code Dispatched 📧',
+      message: `A 6-digit verification code has been sent to ${targetEmail}. Please check your email inbox.`,
       type: 'system'
     });
   };
@@ -860,13 +851,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(true);
     setErrorMessage('');
 
-    const freshOtp = Math.floor(100000 + Math.random() * 900000).toString();
-    let otpCodeToUse = freshOtp;
-    let sentViaRealSmtp = false;
+    let localSmtpList: any[] = [];
+    try {
+      const stored = localStorage.getItem('visualsky_smtp');
+      if (stored) localSmtpList = JSON.parse(stored);
+    } catch {}
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
 
       const res = await fetch('/api/auth/send-otp', {
         method: 'POST',
@@ -874,22 +867,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        body: JSON.stringify({ email: targetEmail }),
+        body: JSON.stringify({ 
+          email: targetEmail,
+          smtpAccounts: localSmtpList
+        }),
         signal: controller.signal
       });
       clearTimeout(timeoutId);
 
-      const { ok, data } = await parseSafeApiResponse(res);
-      if (ok && data?.success) {
-        if (data.otpCode) {
-          otpCodeToUse = safeString(data.otpCode);
-        }
-        if (data.sentViaRealSmtp) {
-          sentViaRealSmtp = true;
-        }
-      }
+      await parseSafeApiResponse(res);
     } catch (err: any) {
-      console.warn('Resend OTP server call fallback:', err);
+      console.warn('Resend OTP request error:', err);
     }
 
     if (isSupabaseConfigured) {
@@ -898,20 +886,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       } catch {}
     }
 
-    setGeneratedOtp(otpCodeToUse);
-    try {
-      sessionStorage.setItem(`vs_otp_${targetEmail}`, otpCodeToUse);
-    } catch {}
-
     setOtpDigits(['', '', '', '', '', '']);
     setForgotOtp('');
     setResendCooldown(60);
     setIsLoading(false);
 
-    const resendNotice = sentViaRealSmtp
-      ? `A fresh 6-digit code has been dispatched to ${targetEmail} via SMTP.`
-      : `A fresh 6-digit code (${otpCodeToUse}) has been generated for ${targetEmail}.`;
-
+    const resendNotice = `A fresh 6-digit verification code has been dispatched to ${targetEmail}. Please check your email inbox.`;
     setSuccessMessage(resendNotice);
 
     setTimeout(() => {
@@ -919,8 +899,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }, 100);
 
     addNotification({
-      title: 'New Code Dispatched 🔐',
-      message: `Fresh Security Code for ${targetEmail}: ${otpCodeToUse}`,
+      title: 'New Code Dispatched 📧',
+      message: `A fresh 6-digit verification code has been sent to ${targetEmail}. Please check your inbox.`,
       type: 'system'
     });
   };
@@ -1000,7 +980,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     const targetEmail = forgotEmail.trim().toLowerCase();
     const finalOtp = otpDigits.join('').trim() || forgotOtp.trim();
     if (!finalOtp || finalOtp.length !== 6) {
-      setErrorMessage('Please enter the full 6-digit verification code.');
+      setErrorMessage('Please enter the full 6-digit verification code from your email.');
       return;
     }
     if (newResetPassword.length < 6) {
@@ -1012,24 +992,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    // Check stored OTP from state or sessionStorage
-    let storedOtp = generatedOtp;
-    try {
-      if (!storedOtp) {
-        storedOtp = sessionStorage.getItem(`vs_otp_${targetEmail}`) || '';
-      }
-    } catch {}
-
-    // Verify OTP matches if stored OTP exists
-    if (storedOtp && finalOtp !== storedOtp) {
-      setErrorMessage('Invalid 6-digit verification code. Please check and try again.');
-      return;
-    }
-
     setIsLoading(true);
     try {
-      // 1. Notify backend server endpoint if reachable (non-blocking for offline resilience)
-      fetch('/api/auth/reset-password', {
+      // 1. Verify code on backend server
+      const res = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -1040,9 +1006,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           otp: finalOtp,
           newPassword: newResetPassword
         })
-      }).catch((err) => {
-        console.warn('Backend reset-password ping failed, updated locally:', err);
       });
+
+      const { ok, data, errorMessage: apiError } = await parseSafeApiResponse(res);
+      if (!ok || !data?.success) {
+        const failureReason = safeString(data?.error) || safeString(apiError) || 'Invalid or expired 6-digit verification code. Please check your email and try again.';
+        throw new Error(failureReason);
+      }
 
       // 2. If Supabase is active, update Supabase user
       if (isSupabaseConfigured && supabase) {
@@ -1069,11 +1039,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setIsLoading(false);
       let cleanError = safeString(err, 'Failed to reset password.');
       if (cleanError.toLowerCase().includes('page could not be found') || cleanError.toLowerCase().includes('page cannot be found')) {
-        cleanError = 'Verification service was temporarily unreachable. Your password has been updated locally.';
+        cleanError = 'Verification service was temporarily unreachable. Please check your connection and try again.';
       }
       setErrorMessage(cleanError);
       addNotification({
-        title: 'Reset Password Note ⚠️',
+        title: 'Reset Password Error ⚠️',
         message: cleanError,
         type: 'warning'
       });
@@ -2143,35 +2113,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       </button>
                     </div>
 
-                    {/* Instant verification passcode banner with one-click autofill */}
-                    {generatedOtp && (
-                      <div className="p-3 bg-cyan-950/40 border border-cyan-500/30 rounded-xl flex items-center justify-between gap-2 text-xs animate-in fade-in duration-200">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shrink-0">
-                            <KeyRound className="w-3.5 h-3.5" />
-                          </div>
-                          <div className="min-w-0">
-                            <span className="text-[10px] text-slate-400 block">Verification Passcode:</span>
-                            <span className="font-mono font-black text-cyan-300 tracking-widest text-sm">{generatedOtp}</span>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const digits = generatedOtp.split('').slice(0, 6);
-                            setOtpDigits(digits);
-                            setForgotOtp(generatedOtp);
-                            setTimeout(() => {
-                              otpInputRefs.current[5]?.focus();
-                            }, 50);
-                          }}
-                          className="px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-bold text-[11px] transition cursor-pointer border border-cyan-500/40 shrink-0 flex items-center gap-1 shadow-sm shadow-cyan-500/10"
-                        >
-                          <Check className="w-3 h-3" />
-                          <span>Autofill</span>
-                        </button>
+                    {/* Secure Email Delivery Notice */}
+                    <div className="p-3.5 bg-slate-900/80 border border-slate-800 rounded-xl flex items-start gap-3 text-xs text-slate-300">
+                      <div className="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 shrink-0 mt-0.5">
+                        <Mail className="w-3.5 h-3.5" />
                       </div>
-                    )}
+                      <div className="min-w-0 leading-relaxed">
+                        <span className="font-semibold text-slate-200 block text-xs">Security code sent to email</span>
+                        <span className="text-[11px] text-slate-400 block mt-0.5">
+                          Please check your email inbox (or spam/junk folder) for your 6-digit one-time passcode.
+                        </span>
+                      </div>
+                    </div>
 
                     {/* Standard 6-Digit Segmented OTP Input */}
                     <div className="space-y-2">
