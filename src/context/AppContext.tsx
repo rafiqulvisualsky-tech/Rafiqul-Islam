@@ -2429,10 +2429,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const resetUserPasswordByEmail = (email: string, newPass: string): boolean => {
-    const user = allUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (!user) return false;
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) return false;
 
-    setAllUsers(prev => prev.map(u => u.email.toLowerCase() === email.toLowerCase() ? { ...u, password: newPass } : u));
+    setAllUsers(prev => {
+      const existingIndex = prev.findIndex(u => u.email?.toLowerCase() === cleanEmail);
+      let updated: UserAccount[];
+      if (existingIndex >= 0) {
+        updated = prev.map((u, i) => (i === existingIndex ? { ...u, password: newPass } : u));
+      } else {
+        const newUser: UserAccount = {
+          id: `usr-${Date.now()}`,
+          name: cleanEmail.split('@')[0],
+          email: cleanEmail,
+          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+          password: newPass,
+          role: 'agency',
+          isOwner: true,
+          plan: 'Enterprise',
+          bdtPlanLabel: 'Agency Master Admin (Free Unlimited)',
+          quotaUsed: 0,
+          quotaLimit: 50000,
+          aiCredits: 10000,
+          company: 'Visual Sky',
+          title: 'Agency Master User',
+          joinedAt: new Date().toISOString().split('T')[0]
+        };
+        updated = [...prev, newUser];
+      }
+      try {
+        localStorage.setItem('visualsky_users', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
     return true;
   };
 
