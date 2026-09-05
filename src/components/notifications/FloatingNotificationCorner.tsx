@@ -198,7 +198,9 @@ export const FloatingNotificationCorner: React.FC = () => {
           </div>
 
           <p className="text-xs text-slate-300 line-clamp-2 leading-relaxed bg-slate-950/60 p-2 rounded-xl border border-slate-800/80">
-            {toast.message}
+            {typeof toast.message === 'object'
+              ? ((toast.message as any)?.message || (toast.message as any)?.text || JSON.stringify(toast.message))
+              : String(toast.message || '')}
           </p>
 
           <div className="flex items-center justify-between gap-2 pt-0.5">

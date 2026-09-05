@@ -659,6 +659,42 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
+  // Defensive String extractor to strictly prevent [object Object] rendering
+  const safeString = (val: any, fallback = ''): string => {
+    if (val === null || val === undefined) return fallback;
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (trimmed === '[object Object]' || !trimmed) return fallback;
+      return trimmed;
+    }
+    if (typeof val === 'number' || typeof val === 'boolean') {
+      return String(val);
+    }
+    if (typeof val === 'object') {
+      if (typeof val.message === 'string' && val.message.trim() && val.message.trim() !== '[object Object]') {
+        return val.message.trim();
+      }
+      if (typeof val.error === 'string' && val.error.trim() && val.error.trim() !== '[object Object]') {
+        return val.error.trim();
+      }
+      if (typeof val.error?.message === 'string' && val.error.message.trim() && val.error.message.trim() !== '[object Object]') {
+        return val.error.message.trim();
+      }
+      if (typeof val.msg === 'string' && val.msg.trim() && val.msg.trim() !== '[object Object]') {
+        return val.msg.trim();
+      }
+      if (typeof val.text === 'string' && val.text.trim() && val.text.trim() !== '[object Object]') {
+        return val.text.trim();
+      }
+      try {
+        const json = JSON.stringify(val);
+        if (json && json !== '{}') return json;
+      } catch {}
+      return fallback || 'An unexpected error occurred';
+    }
+    return String(val);
+  };
+
   // Defensive API response parser to prevent "Unexpected token <" or invalid JSON exceptions
   const parseSafeApiResponse = async (res: Response): Promise<{ ok: boolean; data: any; errorMessage?: string }> => {
     const contentType = res.headers.get('content-type') || '';
@@ -690,10 +726,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const data = JSON.parse(responseText);
       if (!res.ok || data?.success === false) {
+        const extracted = safeString(data?.error) || safeString(data?.message) || (res.status === 404 ? 'Resource not found' : 'Request failed');
         return {
           ok: false,
           data,
-          errorMessage: data?.error || (res.status === 404 ? 'Resource not found' : 'Request failed')
+          errorMessage: extracted
         };
       }
       return { ok: true, data };
@@ -732,18 +769,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       const { ok, data, errorMessage: apiError } = await parseSafeApiResponse(res);
       if (!ok || !data?.success) {
-        throw new Error(apiError || data?.error || 'Failed to dispatch password reset code.');
+        const failureReason = safeString(apiError) || safeString(data?.error) || safeString(data?.message) || 'Failed to dispatch password reset code.';
+        throw new Error(failureReason);
       }
 
       if (data.otpCode) {
-        setGeneratedOtp(data.otpCode);
+        setGeneratedOtp(safeString(data.otpCode));
       }
       setForgotOtp('');
       setOtpDigits(['', '', '', '', '', '']);
       setResendCooldown(60);
       setForgotPhase('verify');
       setIsLoading(false);
-      setSuccessMessage(data.message || `A 6-digit verification code has been dispatched to ${targetEmail}. Please check your inbox.`);
+      
+      const successNotice = safeString(data?.message) || `A 6-digit verification code has been dispatched to ${targetEmail}. Please check your inbox.`;
+      setSuccessMessage(successNotice);
       
       setTimeout(() => {
         otpInputRefs.current[0]?.focus();
@@ -756,9 +796,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       });
     } catch (err: any) {
       setIsLoading(false);
-      const cleanError = err?.message?.includes('JSON')
-        ? 'Verification service response was invalid. Please try again.'
-        : (err?.message || 'Failed to send password reset code.');
+      let cleanError = safeString(err, 'Failed to send password reset code.');
+      if (cleanError.includes('JSON')) {
+        cleanError = 'Verification service response was invalid. Please try again.';
+      }
       setErrorMessage(cleanError);
       addNotification({
         title: 'Reset Code Error ⚠️',
@@ -785,15 +826,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const { ok, data, errorMessage: apiError } = await parseSafeApiResponse(res);
       setIsLoading(false);
       if (!ok || !data?.success) {
-        throw new Error(apiError || data?.error || 'Failed to resend code.');
+        const failureReason = safeString(apiError) || safeString(data?.error) || safeString(data?.message) || 'Failed to resend code.';
+        throw new Error(failureReason);
       }
       if (data.otpCode) {
-        setGeneratedOtp(data.otpCode);
+        setGeneratedOtp(safeString(data.otpCode));
       }
       setOtpDigits(['', '', '', '', '', '']);
       setForgotOtp('');
       setResendCooldown(60);
-      setSuccessMessage(`A fresh 6-digit code has been dispatched to ${targetEmail}.`);
+      const resendNotice = safeString(data?.message) || `A fresh 6-digit code has been dispatched to ${targetEmail}.`;
+      setSuccessMessage(resendNotice);
       setTimeout(() => {
         otpInputRefs.current[0]?.focus();
       }, 100);
@@ -804,9 +847,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       });
     } catch (err: any) {
       setIsLoading(false);
-      const cleanError = err?.message?.includes('JSON')
-        ? 'Could not resend verification code. Please try again.'
-        : (err?.message || 'Failed to resend code.');
+      let cleanError = safeString(err, 'Could not resend verification code. Please try again.');
+      if (cleanError.includes('JSON')) {
+        cleanError = 'Could not resend verification code. Please try again.';
+      }
       setErrorMessage(cleanError);
       addNotification({
         title: 'Resend Failed ⚠️',
@@ -919,7 +963,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       const { ok, data, errorMessage: apiError } = await parseSafeApiResponse(res);
       if (!ok || !data?.success) {
-        throw new Error(apiError || data?.error || 'Invalid or expired verification code.');
+        const failureReason = safeString(apiError) || safeString(data?.error) || safeString(data?.message) || 'Invalid or expired verification code.';
+        throw new Error(failureReason);
       }
 
       // Also update local context
@@ -928,6 +973,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setIsLoading(false);
       setForgotPhase('success');
       setEmail(forgotEmail.trim()); // Pre-fill login email for convenience
+      const successNotice = safeString(data?.message) || `Password for ${forgotEmail} has been updated. You can now sign in with your new password.`;
+      setSuccessMessage(successNotice);
       addNotification({
         title: 'Password Successfully Reset! 🔑',
         message: `Password for ${forgotEmail} has been updated. You can now sign in with your new password.`,
@@ -935,9 +982,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       });
     } catch (err: any) {
       setIsLoading(false);
-      const cleanError = err?.message?.includes('JSON')
-        ? 'Password reset service response was invalid. Please try again.'
-        : (err?.message || 'Failed to reset password.');
+      let cleanError = safeString(err, 'Failed to reset password.');
+      if (cleanError.includes('JSON')) {
+        cleanError = 'Password reset service response was invalid. Please try again.';
+      }
       setErrorMessage(cleanError);
       addNotification({
         title: 'Reset Password Error ⚠️',
@@ -993,17 +1041,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         </div>
 
         {/* Global Error & Success Alerts */}
-        {errorMessage && (
+        {Boolean(errorMessage) && (
           <div className="mx-5 mt-4 p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-start gap-2 text-rose-300 text-xs">
             <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
-            <div className="flex-1">{errorMessage}</div>
+            <div className="flex-1">{safeString(errorMessage, 'An unexpected error occurred.')}</div>
           </div>
         )}
 
-        {successMessage && (
+        {Boolean(successMessage) && (
           <div className="mx-5 mt-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-start gap-2 text-emerald-300 text-xs">
             <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" />
-            <div className="flex-1">{successMessage}</div>
+            <div className="flex-1">{safeString(successMessage, 'Operation completed successfully.')}</div>
           </div>
         )}
 
@@ -1938,7 +1986,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <span>Reset Your Password</span>
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Recover access to your {portalType} account with a secure one-time passcode.
+                    Recover access to your {portalType === 'agency' ? 'Agency Master' : 'Client Workspace'} account with a secure one-time passcode.
                   </p>
                 </div>
 
@@ -1994,7 +2042,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         </div>
                         <div className="min-w-0 truncate">
                           <span className="text-[10px] text-slate-400 block">Code sent to:</span>
-                          <span className="font-bold text-cyan-300 text-xs truncate block">{forgotEmail}</span>
+                          <span className="font-bold text-cyan-300 text-xs truncate block">{safeString(forgotEmail)}</span>
                         </div>
                       </div>
                       <button
@@ -2172,7 +2220,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <div>
                       <h4 className="font-bold text-sm text-slate-100">Password Successfully Updated!</h4>
                       <p className="text-xs text-slate-400 mt-1">
-                        Your account password for <strong className="text-slate-200">{forgotEmail}</strong> has been securely changed.
+                        Your account password for <strong className="text-slate-200">{safeString(forgotEmail)}</strong> has been securely changed.
                       </p>
                     </div>
                     <button

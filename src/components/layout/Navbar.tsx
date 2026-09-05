@@ -667,7 +667,11 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth, onOpenSendMail, onOp
                           </span>
                           <span className="text-[10px] text-slate-500 shrink-0">{n.timestamp}</span>
                         </div>
-                        <p className="text-[11px] text-slate-400 line-clamp-2 mt-0.5">{n.message}</p>
+                        <p className="text-[11px] text-slate-400 line-clamp-2 mt-0.5">
+                          {typeof n.message === 'object'
+                            ? ((n.message as any)?.message || (n.message as any)?.text || JSON.stringify(n.message))
+                            : String(n.message || '')}
+                        </p>
                       </div>
 
                       {/* Delete Notification Button */}
