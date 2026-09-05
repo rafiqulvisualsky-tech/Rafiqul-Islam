@@ -165,8 +165,85 @@ app.post('/api/auth/send-otp', async (req, res) => {
       };
     }
 
-    // Attempt real email dispatch if SMTP is available
-    if (smtpToUse) {
+    const emailSubject = `VisualSky Security Code: ${otpCode}`;
+    const emailText = `Your VisualSky password reset verification code is: ${otpCode}\n\nThis code will expire in 15 minutes. If you did not request this password reset, please ignore this message.`;
+    const emailHtml = `
+      <div style="background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px 20px; color: #e2e8f0;">
+        <div style="max-width: 520px; margin: 0 auto; background: #111827; border: 1px solid #1e293b; border-radius: 16px; padding: 32px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);">
+          <div style="margin-bottom: 24px; text-align: center;">
+            <h2 style="margin: 0; font-size: 24px; font-weight: 800; color: #06b6d4; letter-spacing: -0.5px;">VisualSky Platform</h2>
+            <p style="margin: 4px 0 0 0; font-size: 13px; color: #94a3b8;">Account Security & Verification</p>
+          </div>
+          <div style="background: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
+            <p style="margin: 0 0 12px 0; font-size: 13px; color: #cbd5e1; font-weight: 500;">Your 6-Digit Password Reset OTP Code is:</p>
+            <div style="font-size: 36px; font-weight: 900; font-family: monospace; letter-spacing: 8px; color: #38bdf8; padding: 12px; background: #1e293b; border-radius: 8px; border: 1px dashed #0ea5e9; display: inline-block;">
+              ${otpCode}
+            </div>
+            <p style="margin: 14px 0 0 0; font-size: 12px; color: #94a3b8;">Valid for <strong>15 minutes</strong>. Do not share this code with anyone.</p>
+          </div>
+          <p style="margin: 0; font-size: 12px; color: #64748b; text-align: center; line-height: 1.5;">
+            If you did not request this password reset, please disregard this email or contact support immediately.
+          </p>
+        </div>
+      </div>
+    `;
+
+    // 1. Direct Dispatch via Resend API (if configured)
+    const resendApiKey = process.env.RESEND_API_KEY || (smtpToUse?.provider === 'resend' || smtpToUse?.password?.startsWith('re_') ? smtpToUse.password : null);
+    if (!sentViaRealSmtp && resendApiKey) {
+      try {
+        const resendRes = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${resendApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: process.env.SMTP_FROM || smtpToUse?.fromEmail || 'VisualSky Security <onboarding@resend.dev>',
+            to: cleanEmail,
+            subject: emailSubject,
+            text: emailText,
+            html: emailHtml
+          })
+        });
+        const resendData = await resendRes.json();
+        if (resendRes.ok && resendData.id) {
+          sentViaRealSmtp = true;
+        }
+      } catch (rErr) {
+        console.warn('Resend OTP dispatch warning:', rErr);
+      }
+    }
+
+    // 2. Direct Dispatch via Brevo API (if configured)
+    const brevoApiKey = process.env.BREVO_API_KEY || (smtpToUse?.provider === 'brevo' || smtpToUse?.password?.startsWith('xkeysib-') ? smtpToUse.password : null);
+    if (!sentViaRealSmtp && brevoApiKey) {
+      try {
+        const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST',
+          headers: {
+            'api-key': brevoApiKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            sender: { name: 'VisualSky Security', email: process.env.SMTP_FROM || smtpToUse?.fromEmail || 'security@visualsky.agency' },
+            to: [{ email: cleanEmail }],
+            subject: emailSubject,
+            textContent: emailText,
+            htmlContent: emailHtml
+          })
+        });
+        const brevoData = await brevoRes.json();
+        if (brevoRes.ok && brevoData.messageId) {
+          sentViaRealSmtp = true;
+        }
+      } catch (bErr) {
+        console.warn('Brevo OTP dispatch warning:', bErr);
+      }
+    }
+
+    // 3. Nodemailer SMTP Socket Relay (if configured)
+    if (!sentViaRealSmtp && smtpToUse && smtpToUse.host && smtpToUse.password) {
       try {
         const transporter = nodemailer.createTransport({
           host: smtpToUse.host,
@@ -184,28 +261,9 @@ app.post('/api/auth/send-otp', async (req, res) => {
         await transporter.sendMail({
           from: `"VisualSky Security" <${senderAddress}>`,
           to: cleanEmail,
-          subject: `VisualSky Security Code: ${otpCode}`,
-          text: `Your VisualSky password reset verification code is: ${otpCode}\n\nThis code will expire in 15 minutes. If you did not request this password reset, please ignore this message.`,
-          html: `
-            <div style="background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px 20px; color: #e2e8f0;">
-              <div style="max-width: 520px; margin: 0 auto; background: #111827; border: 1px solid #1e293b; border-radius: 16px; padding: 32px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);">
-                <div style="margin-bottom: 24px; text-align: center;">
-                  <h2 style="margin: 0; font-size: 24px; font-weight: 800; color: #06b6d4; letter-spacing: -0.5px;">VisualSky Platform</h2>
-                  <p style="margin: 4px 0 0 0; font-size: 13px; color: #94a3b8;">Account Security & Verification</p>
-                </div>
-                <div style="background: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
-                  <p style="margin: 0 0 12px 0; font-size: 13px; color: #cbd5e1; font-weight: 500;">Your 6-Digit Password Reset OTP Code is:</p>
-                  <div style="font-size: 36px; font-weight: 900; font-family: monospace; letter-spacing: 8px; color: #38bdf8; padding: 12px; background: #1e293b; border-radius: 8px; border: 1px dashed #0ea5e9; display: inline-block;">
-                    ${otpCode}
-                  </div>
-                  <p style="margin: 14px 0 0 0; font-size: 12px; color: #94a3b8;">Valid for <strong>15 minutes</strong>. Do not share this code with anyone.</p>
-                </div>
-                <p style="margin: 0; font-size: 12px; color: #64748b; text-align: center; line-height: 1.5;">
-                  If you did not request this password reset, please disregard this email or contact support immediately.
-                </p>
-              </div>
-            </div>
-          `
+          subject: emailSubject,
+          text: emailText,
+          html: emailHtml
         });
         sentViaRealSmtp = true;
       } catch (smtpErr: any) {

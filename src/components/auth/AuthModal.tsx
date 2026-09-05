@@ -813,13 +813,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       console.warn('Server send-otp request:', err);
     }
 
-    // If Supabase is active, trigger Supabase password reset email
-    if (isSupabaseConfigured) {
-      try {
-        resetPasswordWithSupabase(targetEmail).catch(() => {});
-      } catch {}
-    }
-
     // Transition to Phase 2 (Verify)
     setForgotOtp('');
     setOtpDigits(['', '', '', '', '', '']);
@@ -878,12 +871,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       await parseSafeApiResponse(res);
     } catch (err: any) {
       console.warn('Resend OTP request error:', err);
-    }
-
-    if (isSupabaseConfigured) {
-      try {
-        resetPasswordWithSupabase(targetEmail).catch(() => {});
-      } catch {}
     }
 
     setOtpDigits(['', '', '', '', '', '']);
