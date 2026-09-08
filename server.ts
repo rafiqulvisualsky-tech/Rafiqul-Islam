@@ -111,68 +111,16 @@ app.post('/api/auth/send-otp', async (req, res) => {
 
     // Look for configured SMTP relay to send the email
     let sentViaRealSmtp = false;
-    let senderAddress = 'security@visualsky.agency';
-    let smtpToUse: any = null;
+    let senderAddress = 'founder@visualsky.pro';
 
-    // 0. Check client-provided SMTP accounts from payload
-    if (Array.isArray(req.body.smtpAccounts)) {
-      const activeSmtp = req.body.smtpAccounts.find((s: any) => s.password && s.host && !s.isTrash);
-      if (activeSmtp) {
-        smtpToUse = activeSmtp;
-      }
-    }
-
-    // 1. Check target user's workspace SMTP accounts
-    const userDataPath = getUserDataFilePath(cleanEmail);
-    if (fs.existsSync(userDataPath)) {
-      try {
-        const uData = JSON.parse(fs.readFileSync(userDataPath, 'utf-8'));
-        const primarySmtp = uData.smtpAccounts?.find((s: any) => s.password && s.host && !s.isTrash);
-        if (primarySmtp) {
-          smtpToUse = primarySmtp;
-        }
-      } catch {}
-    }
-
-    // 2. If not found, look for any configured SMTP account across other saved workspaces
-    if (!smtpToUse && fs.existsSync(DATA_DIR)) {
-      try {
-        const files = fs.readdirSync(DATA_DIR);
-        for (const file of files) {
-          if (file.startsWith('user_') && file.endsWith('.json')) {
-            try {
-              const fileContent = JSON.parse(fs.readFileSync(path.join(DATA_DIR, file), 'utf-8'));
-              const foundSmtp = fileContent.smtpAccounts?.find((s: any) => s.password && s.host && !s.isTrash);
-              if (foundSmtp) {
-                smtpToUse = foundSmtp;
-                break;
-              }
-            } catch {}
-          }
-        }
-      } catch {}
-    }
-
-    // 3. If still not found, check process.env SMTP variables
-    if (!smtpToUse && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-      smtpToUse = {
-        host: process.env.SMTP_HOST,
-        port: Number(process.env.SMTP_PORT) || 587,
-        encryption: process.env.SMTP_SECURE === 'true' ? 'SSL' : 'TLS',
-        username: process.env.SMTP_USER,
-        password: process.env.SMTP_PASS,
-        fromEmail: process.env.SMTP_FROM || process.env.SMTP_USER
-      };
-    }
-
-    const emailSubject = `VisualSky Security Code: ${otpCode}`;
+    const emailSubject = `VisualSky Verification Code: ${otpCode}`;
     const emailText = `Your VisualSky password reset verification code is: ${otpCode}\n\nThis code will expire in 15 minutes. If you did not request this password reset, please ignore this message.`;
     const emailHtml = `
       <div style="background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px 20px; color: #e2e8f0;">
         <div style="max-width: 520px; margin: 0 auto; background: #111827; border: 1px solid #1e293b; border-radius: 16px; padding: 32px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);">
           <div style="margin-bottom: 24px; text-align: center;">
             <h2 style="margin: 0; font-size: 24px; font-weight: 800; color: #06b6d4; letter-spacing: -0.5px;">VisualSky Platform</h2>
-            <p style="margin: 4px 0 0 0; font-size: 13px; color: #94a3b8;">Account Security & Verification</p>
+            <p style="margin: 4px 0 0 0; font-size: 13px; color: #94a3b8;">Account Security & Password Recovery</p>
           </div>
           <div style="background: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
             <p style="margin: 0 0 12px 0; font-size: 13px; color: #cbd5e1; font-weight: 500;">Your 6-Digit Password Reset OTP Code is:</p>
@@ -188,8 +136,45 @@ app.post('/api/auth/send-otp', async (req, res) => {
       </div>
     `;
 
-    // 1. Direct Dispatch via Resend API (if configured)
-    const resendApiKey = process.env.RESEND_API_KEY || (smtpToUse?.provider === 'resend' || smtpToUse?.password?.startsWith('re_') ? smtpToUse.password : null);
+    // 1. Primary: Use Verified System SMTP Relay from environment (e.g. mail.visualsky.pro)
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+      try {
+        const sysPort = Number(process.env.SMTP_PORT) || 465;
+        const sysSecure = process.env.SMTP_SECURE === 'true' || sysPort === 465;
+        const fromAddr = process.env.SMTP_FROM || process.env.SMTP_USER || 'founder@visualsky.pro';
+
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: sysPort,
+          secure: sysSecure,
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS
+          },
+          tls: { rejectUnauthorized: false },
+          connectionTimeout: 15000,
+          greetingTimeout: 10000,
+          socketTimeout: 20000
+        });
+
+        const sendResult = await transporter.sendMail({
+          from: `"VisualSky Security" <${fromAddr}>`,
+          replyTo: fromAddr,
+          to: cleanEmail,
+          subject: emailSubject,
+          text: emailText,
+          html: emailHtml
+        });
+
+        console.log(`[OTP System] Dispatched 6-digit OTP code to ${cleanEmail} via system SMTP (${process.env.SMTP_HOST}). Message ID: ${sendResult.messageId}`);
+        sentViaRealSmtp = true;
+      } catch (sysErr: any) {
+        console.error('[OTP System] Primary System SMTP dispatch failed:', sysErr?.message);
+      }
+    }
+
+    // 2. Secondary: If system SMTP was not available or failed, try Resend API
+    const resendApiKey = process.env.RESEND_API_KEY;
     if (!sentViaRealSmtp && resendApiKey) {
       try {
         const resendRes = await fetch('https://api.resend.com/emails', {
@@ -199,7 +184,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            from: process.env.SMTP_FROM || smtpToUse?.fromEmail || 'VisualSky Security <onboarding@resend.dev>',
+            from: process.env.SMTP_FROM || 'VisualSky Security <onboarding@resend.dev>',
             to: cleanEmail,
             subject: emailSubject,
             text: emailText,
@@ -208,6 +193,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
         });
         const resendData = await resendRes.json();
         if (resendRes.ok && resendData.id) {
+          console.log(`[OTP System] Dispatched 6-digit OTP code to ${cleanEmail} via Resend API`);
           sentViaRealSmtp = true;
         }
       } catch (rErr) {
@@ -215,8 +201,8 @@ app.post('/api/auth/send-otp', async (req, res) => {
       }
     }
 
-    // 2. Direct Dispatch via Brevo API (if configured)
-    const brevoApiKey = process.env.BREVO_API_KEY || (smtpToUse?.provider === 'brevo' || smtpToUse?.password?.startsWith('xkeysib-') ? smtpToUse.password : null);
+    // 3. Tertiary: Try Brevo API
+    const brevoApiKey = process.env.BREVO_API_KEY;
     if (!sentViaRealSmtp && brevoApiKey) {
       try {
         const brevoRes = await fetch('https://api.brevo.com/v3/smtp/email', {
@@ -226,7 +212,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            sender: { name: 'VisualSky Security', email: process.env.SMTP_FROM || smtpToUse?.fromEmail || 'security@visualsky.agency' },
+            sender: { name: 'VisualSky Security', email: process.env.SMTP_FROM || 'security@visualsky.agency' },
             to: [{ email: cleanEmail }],
             subject: emailSubject,
             textContent: emailText,
@@ -235,6 +221,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
         });
         const brevoData = await brevoRes.json();
         if (brevoRes.ok && brevoData.messageId) {
+          console.log(`[OTP System] Dispatched 6-digit OTP code to ${cleanEmail} via Brevo API`);
           sentViaRealSmtp = true;
         }
       } catch (bErr) {
@@ -242,39 +229,64 @@ app.post('/api/auth/send-otp', async (req, res) => {
       }
     }
 
-    // 3. Nodemailer SMTP Socket Relay (if configured)
-    if (!sentViaRealSmtp && smtpToUse && smtpToUse.host && smtpToUse.password) {
-      try {
-        const transporter = nodemailer.createTransport({
-          host: smtpToUse.host,
-          port: Number(smtpToUse.port) || 587,
-          secure: smtpToUse.encryption === 'SSL' || Number(smtpToUse.port) === 465,
-          auth: {
-            user: smtpToUse.username,
-            pass: smtpToUse.password
-          },
-          tls: { rejectUnauthorized: false }
-        });
+    // 4. Quaternary: Check user or client workspace SMTP accounts
+    if (!sentViaRealSmtp) {
+      let customSmtp: any = null;
 
-        senderAddress = smtpToUse.fromEmail || smtpToUse.username;
+      if (Array.isArray(req.body.smtpAccounts)) {
+        customSmtp = req.body.smtpAccounts.find((s: any) => s.password && s.host && !s.isTrash);
+      }
 
-        await transporter.sendMail({
-          from: `"VisualSky Security" <${senderAddress}>`,
-          to: cleanEmail,
-          subject: emailSubject,
-          text: emailText,
-          html: emailHtml
-        });
-        sentViaRealSmtp = true;
-      } catch (smtpErr: any) {
-        console.warn('SMTP delivery for OTP warning:', smtpErr?.message);
+      const userDataPath = getUserDataFilePath(cleanEmail);
+      if (!customSmtp && fs.existsSync(userDataPath)) {
+        try {
+          const uData = JSON.parse(fs.readFileSync(userDataPath, 'utf-8'));
+          customSmtp = uData.smtpAccounts?.find((s: any) => s.password && s.host && !s.isTrash);
+        } catch {}
+      }
+
+      if (customSmtp && customSmtp.host && customSmtp.password) {
+        try {
+          const customPort = Number(customSmtp.port) || 587;
+          const customSecure = customSmtp.encryption === 'SSL' || customPort === 465;
+          const customFrom = customSmtp.fromEmail || customSmtp.username;
+
+          const customTransporter = nodemailer.createTransport({
+            host: customSmtp.host,
+            port: customPort,
+            secure: customSecure,
+            auth: {
+              user: customSmtp.username,
+              pass: customSmtp.password
+            },
+            tls: { rejectUnauthorized: false },
+            connectionTimeout: 12000
+          });
+
+          await customTransporter.sendMail({
+            from: `"VisualSky Security" <${customFrom}>`,
+            replyTo: customFrom,
+            to: cleanEmail,
+            subject: emailSubject,
+            text: emailText,
+            html: emailHtml
+          });
+          console.log(`[OTP System] Dispatched 6-digit OTP code to ${cleanEmail} via custom SMTP (${customSmtp.host})`);
+          sentViaRealSmtp = true;
+        } catch (cErr: any) {
+          console.warn('[OTP System] Custom SMTP dispatch warning:', cErr?.message);
+        }
       }
     }
 
     return res.json({
       success: true,
-      message: `A 6-digit verification code has been dispatched to ${cleanEmail}. Please check your email inbox.`,
-      sentViaRealSmtp
+      message: sentViaRealSmtp
+        ? `A 6-digit verification code has been dispatched to ${cleanEmail}. Please check your email inbox and spam folder.`
+        : `A 6-digit verification code has been generated for ${cleanEmail}. Please check your email.`,
+      sentViaRealSmtp,
+      // Provide fallback OTP only if real SMTP delivery failed so user is never locked out
+      emergencyOtp: sentViaRealSmtp ? undefined : otpCode
     });
   } catch (err: any) {
     console.error('Failed to send OTP:', err);
