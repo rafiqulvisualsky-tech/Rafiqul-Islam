@@ -528,7 +528,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth, onOpenSendMail, onOp
         <button
           onClick={() => {
             if (currentUser?.email) {
-              loadUserWorkspace(currentUser.email);
+              loadUserWorkspace(currentUser.email, currentUser.id || currentUser.supabaseId);
             }
           }}
           title={

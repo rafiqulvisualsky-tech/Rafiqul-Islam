@@ -383,7 +383,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return [googleUser, ...filtered];
       });
       loginUser(googleUser);
-      loadUserWorkspace(googleUser.email);
+      await loadUserWorkspace(googleUser.email, googleUser.id || googleUser.supabaseId);
 
       setIsLoading(false);
       addNotification({
@@ -481,7 +481,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           result = {
             success: true,
             user: {
-              id: matchedUser?.id || `usr-${Date.now()}`,
+              id: matchedUser?.id || (cleanEmail === 'rafiqulvisualsky@gmail.com' ? 'user-agency-1' : `usr-${cleanEmail.replace(/[^a-z0-9]/g, '-')}`),
               email: cleanEmail,
               user_metadata: {
                 name: matchedUser?.name || cleanEmail.split('@')[0],
@@ -503,13 +503,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const isAgency = assignedRole === 'agency';
 
       // Check if user already exists in local accounts list
-      const matched = allUsers.find(u => u.email.toLowerCase() === email.trim().toLowerCase());
+      const cleanEmail = email.trim().toLowerCase();
+      const matched = allUsers.find(u => u.email.toLowerCase() === cleanEmail);
       const authenticatedUser: UserAccount = matched
         ? { ...matched, role: assignedRole, isOwner: isAgency }
         : {
-            id: result.user?.id || `usr-${Date.now()}`,
+            id: result.user?.id || (cleanEmail === 'rafiqulvisualsky@gmail.com' ? 'user-agency-1' : `usr-${cleanEmail.replace(/[^a-z0-9]/g, '-')}`),
             name: result.user?.user_metadata?.name || (isAgency ? 'Agency Master Admin' : 'Client Partner'),
-            email: email.trim(),
+            email: cleanEmail,
             avatar: isAgency
               ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
               : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
@@ -528,7 +529,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return [authenticatedUser, ...filtered];
       });
       loginUser(authenticatedUser);
-      loadUserWorkspace(authenticatedUser.email);
+      await loadUserWorkspace(authenticatedUser.email, authenticatedUser.id || authenticatedUser.supabaseId, result.user?.user_metadata?.workspace_data);
 
       setIsLoading(false);
       addNotification({
@@ -630,7 +631,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       setAllUsers(prev => [newAgencyUser, ...prev]);
       loginUser(newAgencyUser);
-      loadUserWorkspace(newAgencyUser.email);
+      await loadUserWorkspace(newAgencyUser.email, newAgencyUser.id || newAgencyUser.supabaseId);
 
       setIsLoading(false);
       addNotification({
@@ -719,7 +720,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       setAllUsers(prev => [newClientUser, ...prev]);
       loginUser(newClientUser);
-      loadUserWorkspace(newClientUser.email);
+      await loadUserWorkspace(newClientUser.email, newClientUser.id || newClientUser.supabaseId);
 
       setIsLoading(false);
       addNotification({
@@ -1133,7 +1134,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   // Direct 1-click login after successful password reset
-  const handleInstantLoginAfterReset = (targetEmail: string, targetPass: string) => {
+  const handleInstantLoginAfterReset = async (targetEmail: string, targetPass: string) => {
     const cleanEmail = (targetEmail || forgotEmail || email).trim().toLowerCase();
     const cleanPass = targetPass || newResetPassword || password;
     const isAgency = cleanEmail.includes('admin') || cleanEmail.includes('agency') || cleanEmail === 'rafiqulvisualsky@gmail.com';
@@ -1165,7 +1166,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return [authenticatedUser, ...filtered];
     });
     loginUser(authenticatedUser);
-    loadUserWorkspace(authenticatedUser.email);
+    await loadUserWorkspace(authenticatedUser.email, authenticatedUser.id || authenticatedUser.supabaseId);
     addNotification({
       title: `Welcome back, ${authenticatedUser.name}! 👋`,
       message: isAgency

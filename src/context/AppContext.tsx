@@ -19,6 +19,7 @@ import {
 import confetti from 'canvas-confetti';
 import { audioEngine } from '../utils/audioPlayer';
 import { supabase, isSupabaseConfigured, signOutSupabase } from '../lib/supabase';
+import { queryUserWorkspace, persistUserWorkspace, WorkspaceData } from '../lib/workspaceSync';
 
 // Helper to calculate warm-up limits based on gradual +15/day ramp
 export const getSMTPWarmupDetails = (account: SMTPAccount) => {
@@ -203,7 +204,7 @@ interface AppContextType {
   setMinedLeads: React.Dispatch<React.SetStateAction<Lead[]>>;
   
   // Cross-Browser Cloud Workspace Sync
-  loadUserWorkspace: (userEmail: string) => Promise<void>;
+  loadUserWorkspace: (userEmail: string, userId?: string) => Promise<boolean>;
   saveWorkspaceToDatabase: () => Promise<boolean>;
   persistResourceDirectly: (resource: string, items: any[]) => Promise<void>;
   isWorkspaceLoading: boolean;
@@ -440,8 +441,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setActiveTabState('dashboard');
       try { localStorage.setItem('visualsky_active_tab', 'dashboard'); } catch {}
     }
-    // Cross-browser sync: immediately load server workspace
-    loadUserWorkspace(user.email);
+    // Cross-browser sync: immediately load database workspace
+    loadUserWorkspace(user.email, user.id || user.supabaseId);
   };
 
   const setActiveTab = (tab: string) => {
@@ -462,7 +463,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try { localStorage.setItem('visualsky_active_tab', 'dashboard'); } catch {}
     }
     if (user?.email && user.email.toLowerCase() !== loadedWorkspaceEmailRef.current) {
-      loadUserWorkspace(user.email);
+      loadUserWorkspace(user.email, user.id || user.supabaseId);
     }
   };
 
@@ -536,8 +537,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return [syncedUser, ...prev];
         });
 
-        // Load persisted workspace from server
-        loadUserWorkspace(syncedUser.email);
+        // Load persisted workspace from database
+        loadUserWorkspace(syncedUser.email, syncedUser.id || syncedUser.supabaseId);
 
         // Respect existing saved active tab
         const savedTab = localStorage.getItem('visualsky_active_tab');
@@ -636,8 +637,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return [syncedUser, ...prev];
         });
 
-        // Load persisted workspace from server
-        loadUserWorkspace(syncedUser.email);
+        // Load persisted workspace from database
+        loadUserWorkspace(syncedUser.email, syncedUser.id || syncedUser.supabaseId);
 
         // Keep existing active tab if already set or saved, otherwise set default
         const savedTab = localStorage.getItem('visualsky_active_tab');
@@ -819,9 +820,62 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
   const loadedWorkspaceEmailRef = useRef<string | null>(null);
+  const loadedWorkspaceUserIdRef = useRef<string | null>(null);
   const [isWorkspaceLoading, setIsWorkspaceLoading] = useState<boolean>(false);
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline'>('synced');
   const isHydratingRef = useRef<boolean>(false);
+
+  // Direct manual / immediate workspace save to database (Supabase + Central Backend)
+  const saveWorkspaceToDatabase = async (): Promise<boolean> => {
+    if (!isAuthenticated || !currentUser?.email) return false;
+    const cleanEmail = currentUser.email.trim().toLowerCase();
+    const cleanUserId = (currentUser.id || currentUser.supabaseId || '').trim();
+    setSyncStatus('syncing');
+
+    try {
+      const payload: WorkspaceData = {
+        leads,
+        leadTags,
+        smtpAccounts,
+        campaigns,
+        emailTemplates,
+        templateCategories,
+        threads,
+        sentEmails,
+        minedLeads,
+        columnSettings,
+        notificationSettings,
+        userProfile: {
+          quotaUsed: currentUser.quotaUsed,
+          quotaLimit: currentUser.quotaLimit,
+          aiCredits: currentUser.aiCredits,
+          company: currentUser.company,
+          title: currentUser.title,
+          phone: currentUser.phone,
+          plan: currentUser.plan,
+          bdtPlanLabel: currentUser.bdtPlanLabel
+        }
+      };
+
+      const res = await persistUserWorkspace({
+        userId: cleanUserId,
+        email: cleanEmail,
+        data: payload
+      });
+
+      if (res.success) {
+        setSyncStatus('synced');
+        return true;
+      } else {
+        setSyncStatus('offline');
+        return false;
+      }
+    } catch (err) {
+      console.warn('Direct workspace save error:', err);
+      setSyncStatus('offline');
+      return false;
+    }
+  };
 
   // Direct Central Database resource persistence helper
   const persistResourceDirectly = async (resource: string, items: any[]) => {
@@ -829,7 +883,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const cleanEmail = currentUser.email.trim().toLowerCase();
     try {
       setSyncStatus('syncing');
-      const res = await fetch(`/api/user-data/${encodeURIComponent(cleanEmail)}/resource/${encodeURIComponent(resource)}`, {
+      await fetch(`/api/user-data/${encodeURIComponent(cleanEmail)}/resource/${encodeURIComponent(resource)}`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -837,88 +891,74 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         },
         body: JSON.stringify({ items })
       });
-      if (res.ok) {
-        setSyncStatus('synced');
-      } else {
-        setSyncStatus('offline');
-      }
+      // Also trigger full workspace sync
+      saveWorkspaceToDatabase();
     } catch (e) {
       console.warn(`Direct database persistence error for ${resource}:`, e);
       setSyncStatus('offline');
     }
   };
 
-  // Load user workspace from server (Cross-Browser Persistence & Login Hydration)
-  const loadUserWorkspace = async (userEmail: string) => {
-    if (!userEmail) return;
-    const cleanEmail = userEmail.trim().toLowerCase();
+  // Load user workspace from database (Cross-Device & Cross-Browser Persistence)
+  const loadUserWorkspace = async (userEmail?: string, userId?: string): Promise<boolean> => {
+    const cleanEmail = (userEmail || currentUser?.email || '').trim().toLowerCase();
+    const cleanUserId = (userId || currentUser?.id || currentUser?.supabaseId || '').trim();
+    if (!cleanEmail && !cleanUserId) return false;
+
     setIsWorkspaceLoading(true);
     setSyncStatus('syncing');
     isHydratingRef.current = true;
 
     try {
-      const res = await fetch(`/api/user-data/${encodeURIComponent(cleanEmail)}`, {
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
+      const result = await queryUserWorkspace({ userId: cleanUserId, email: cleanEmail });
+      if (result.success && result.data && typeof result.data === 'object') {
+        const data = result.data;
+        // Central database is the single source of truth - hydrate all workspace state
+        if (Array.isArray(data.leads)) {
+          setLeads(data.leads);
         }
-      });
-      if (res.ok) {
-        const json = await res.json();
-        const data = json?.data;
-        if (data && typeof data === 'object') {
-          // Central database is the single source of truth - hydrate all workspace state
-          if (Array.isArray(data.leads)) {
-            setLeads(data.leads);
-            try { localStorage.setItem('visualsky_leads', JSON.stringify(data.leads)); } catch {}
-          }
-          if (Array.isArray(data.leadTags)) {
-            setLeadTags(data.leadTags);
-            try { localStorage.setItem('visualsky_tags', JSON.stringify(data.leadTags)); } catch {}
-          }
-          if (Array.isArray(data.smtpAccounts)) {
-            setSmtpAccounts(data.smtpAccounts);
-            try { localStorage.setItem('visualsky_smtp', JSON.stringify(data.smtpAccounts)); } catch {}
-          }
-          if (Array.isArray(data.campaigns)) {
-            setCampaigns(data.campaigns);
-            try { localStorage.setItem('visualsky_campaigns', JSON.stringify(data.campaigns)); } catch {}
-          }
-          if (Array.isArray(data.emailTemplates)) {
-            setEmailTemplates(data.emailTemplates);
-            try { localStorage.setItem('visualsky_templates', JSON.stringify(data.emailTemplates)); } catch {}
-          }
-          if (Array.isArray(data.templateCategories)) {
-            setTemplateCategories(data.templateCategories);
-            try { localStorage.setItem('visualsky_tmpl_categories', JSON.stringify(data.templateCategories)); } catch {}
-          }
-          if (Array.isArray(data.threads)) {
-            setThreads(data.threads);
-            try { localStorage.setItem('visualsky_threads', JSON.stringify(data.threads)); } catch {}
-          }
-          if (Array.isArray(data.sentEmails)) {
-            setSentEmails(data.sentEmails);
-            try { localStorage.setItem('visualsky_sent_emails', JSON.stringify(data.sentEmails)); } catch {}
-          }
-          if (Array.isArray(data.minedLeads)) {
-            setMinedLeads(data.minedLeads);
-            try { localStorage.setItem('visualsky_mined_leads', JSON.stringify(data.minedLeads)); } catch {}
-          }
-          if (Array.isArray(data.columnSettings)) {
-            setColumnSettings(data.columnSettings);
-            try { localStorage.setItem('visualsky_cols', JSON.stringify(data.columnSettings)); } catch {}
-          }
-          if (data.notificationSettings && typeof data.notificationSettings === 'object') {
-            setNotificationSettings(data.notificationSettings);
-            try { localStorage.setItem('visualsky_notification_settings', JSON.stringify(data.notificationSettings)); } catch {}
-          }
-          if (data.userProfile && typeof data.userProfile === 'object') {
-            setCurrentUserState(prev => ({ ...prev, ...data.userProfile }));
-          }
-        } else {
-          // Brand new user workspace - save initial baseline to central database
-          const initialData = {
+        if (Array.isArray(data.leadTags)) {
+          setLeadTags(data.leadTags);
+        }
+        if (Array.isArray(data.smtpAccounts)) {
+          setSmtpAccounts(data.smtpAccounts);
+        }
+        if (Array.isArray(data.campaigns)) {
+          setCampaigns(data.campaigns);
+        }
+        if (Array.isArray(data.emailTemplates)) {
+          setEmailTemplates(data.emailTemplates);
+        }
+        if (Array.isArray(data.templateCategories)) {
+          setTemplateCategories(data.templateCategories);
+        }
+        if (Array.isArray(data.threads)) {
+          setThreads(data.threads);
+        }
+        if (Array.isArray(data.sentEmails)) {
+          setSentEmails(data.sentEmails);
+        }
+        if (Array.isArray(data.minedLeads)) {
+          setMinedLeads(data.minedLeads);
+        }
+        if (Array.isArray(data.columnSettings)) {
+          setColumnSettings(data.columnSettings);
+        }
+        if (data.notificationSettings && typeof data.notificationSettings === 'object') {
+          setNotificationSettings(data.notificationSettings);
+        }
+        if (data.userProfile && typeof data.userProfile === 'object') {
+          setCurrentUserState(prev => ({ ...prev, ...data.userProfile }));
+        }
+
+        loadedWorkspaceEmailRef.current = cleanEmail;
+        loadedWorkspaceUserIdRef.current = cleanUserId;
+        setSyncStatus('synced');
+        return true;
+      } else {
+        // Only if database query confirmed no workspace exists for a brand new user
+        if (result.source === 'none' && !result.error) {
+          const initialData: WorkspaceData = {
             leads: INITIAL_LEADS,
             leadTags: INITIAL_TAGS,
             smtpAccounts: INITIAL_SMTP,
@@ -942,24 +982,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               aiCredits: 10000
             }
           };
-          fetch(`/api/user-data/${encodeURIComponent(cleanEmail)}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ data: initialData })
-          }).catch(() => {});
+
+          await persistUserWorkspace({
+            userId: cleanUserId,
+            email: cleanEmail,
+            data: initialData
+          });
+
+          loadedWorkspaceEmailRef.current = cleanEmail;
+          loadedWorkspaceUserIdRef.current = cleanUserId;
+          setSyncStatus('synced');
+          return true;
+        } else {
+          // If query errored or offline, keep loadedWorkspaceRef locked to prevent overwriting server records!
+          setSyncStatus('offline');
+          return false;
         }
       }
-      loadedWorkspaceEmailRef.current = cleanEmail;
-      setSyncStatus('synced');
     } catch (err) {
-      console.warn('Server workspace sync fallback:', err);
-      loadedWorkspaceEmailRef.current = cleanEmail;
+      console.warn('Server workspace sync error:', err);
       setSyncStatus('offline');
+      return false;
     } finally {
       setIsWorkspaceLoading(false);
       setTimeout(() => {
         isHydratingRef.current = false;
-      }, 400);
+      }, 500);
     }
   };
 
@@ -983,24 +1031,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .catch(() => {});
 
     if (isAuthenticated && currentUser?.email) {
-      loadUserWorkspace(currentUser.email);
+      loadUserWorkspace(currentUser.email, currentUser.id || currentUser.supabaseId);
     }
   }, []);
 
-  // Sync to LocalStorage (secondary client cache)
-  useEffect(() => { localStorage.setItem('visualsky_tags', JSON.stringify(leadTags)); }, [leadTags]);
-  useEffect(() => { localStorage.setItem('visualsky_leads', JSON.stringify(leads)); }, [leads]);
-  useEffect(() => { localStorage.setItem('visualsky_cols', JSON.stringify(columnSettings)); }, [columnSettings]);
-  useEffect(() => { localStorage.setItem('visualsky_threads', JSON.stringify(threads)); }, [threads]);
-  useEffect(() => { localStorage.setItem('visualsky_campaigns', JSON.stringify(campaigns)); }, [campaigns]);
-  useEffect(() => { localStorage.setItem('visualsky_tmpl_categories', JSON.stringify(templateCategories)); }, [templateCategories]);
-  useEffect(() => { localStorage.setItem('visualsky_templates', JSON.stringify(emailTemplates)); }, [emailTemplates]);
-  useEffect(() => { localStorage.setItem('visualsky_smtp', JSON.stringify(smtpAccounts)); }, [smtpAccounts]);
-  useEffect(() => { localStorage.setItem('visualsky_sent_emails', JSON.stringify(sentEmails)); }, [sentEmails]);
-  useEffect(() => { localStorage.setItem('visualsky_notifs', JSON.stringify(notifications)); }, [notifications]);
-  useEffect(() => { localStorage.setItem('visualsky_current_user', JSON.stringify(currentUser)); }, [currentUser]);
+  // Sync to LocalStorage (secondary client cache only, never primary authority)
+  useEffect(() => { try { localStorage.setItem('visualsky_tags', JSON.stringify(leadTags)); } catch {} }, [leadTags]);
+  useEffect(() => { try { localStorage.setItem('visualsky_leads', JSON.stringify(leads)); } catch {} }, [leads]);
+  useEffect(() => { try { localStorage.setItem('visualsky_cols', JSON.stringify(columnSettings)); } catch {} }, [columnSettings]);
+  useEffect(() => { try { localStorage.setItem('visualsky_threads', JSON.stringify(threads)); } catch {} }, [threads]);
+  useEffect(() => { try { localStorage.setItem('visualsky_campaigns', JSON.stringify(campaigns)); } catch {} }, [campaigns]);
+  useEffect(() => { try { localStorage.setItem('visualsky_tmpl_categories', JSON.stringify(templateCategories)); } catch {} }, [templateCategories]);
+  useEffect(() => { try { localStorage.setItem('visualsky_templates', JSON.stringify(emailTemplates)); } catch {} }, [emailTemplates]);
+  useEffect(() => { try { localStorage.setItem('visualsky_smtp', JSON.stringify(smtpAccounts)); } catch {} }, [smtpAccounts]);
+  useEffect(() => { try { localStorage.setItem('visualsky_sent_emails', JSON.stringify(sentEmails)); } catch {} }, [sentEmails]);
+  useEffect(() => { try { localStorage.setItem('visualsky_notifs', JSON.stringify(notifications)); } catch {} }, [notifications]);
+  useEffect(() => { try { localStorage.setItem('visualsky_current_user', JSON.stringify(currentUser)); } catch {} }, [currentUser]);
   useEffect(() => { 
-    localStorage.setItem('visualsky_users', JSON.stringify(allUsers));
+    try { localStorage.setItem('visualsky_users', JSON.stringify(allUsers)); } catch {}
     // Also sync all users to server registry
     fetch('/api/users/sync', {
       method: 'POST',
@@ -1008,62 +1056,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       body: JSON.stringify({ users: allUsers })
     }).catch(() => {});
   }, [allUsers]);
-  useEffect(() => { localStorage.setItem('visualsky_mined_leads', JSON.stringify(minedLeads)); }, [minedLeads]);
-  useEffect(() => { localStorage.setItem('visualsky_notification_settings', JSON.stringify(notificationSettings)); }, [notificationSettings]);
+  useEffect(() => { try { localStorage.setItem('visualsky_mined_leads', JSON.stringify(minedLeads)); } catch {} }, [minedLeads]);
+  useEffect(() => { try { localStorage.setItem('visualsky_notification_settings', JSON.stringify(notificationSettings)); } catch {} }, [notificationSettings]);
 
-  // Debounced server workspace sync - only runs when workspace for currentUser has been loaded
+  // Debounced database workspace sync - only runs when workspace for currentUser has been loaded
   useEffect(() => {
     if (!isAuthenticated || !currentUser?.email) return;
-    if (isHydratingRef.current) return;
+    if (isHydratingRef.current || isWorkspaceLoading) return;
     const cleanEmail = currentUser.email.trim().toLowerCase();
+    const cleanUserId = (currentUser.id || currentUser.supabaseId || '').trim();
 
     // Guard: Prevent saving until this user's workspace is confirmed loaded from the backend
-    if (loadedWorkspaceEmailRef.current !== cleanEmail) {
+    if (loadedWorkspaceEmailRef.current !== cleanEmail && (!cleanUserId || loadedWorkspaceUserIdRef.current !== cleanUserId)) {
       return;
     }
 
     setSyncStatus('syncing');
     const timer = setTimeout(() => {
-      fetch(`/api/user-data/${encodeURIComponent(cleanEmail)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          data: {
-            leads,
-            leadTags,
-            smtpAccounts,
-            campaigns,
-            emailTemplates,
-            templateCategories,
-            threads,
-            sentEmails,
-            minedLeads,
-            columnSettings,
-            notificationSettings,
-            userProfile: {
-              quotaUsed: currentUser.quotaUsed,
-              quotaLimit: currentUser.quotaLimit,
-              aiCredits: currentUser.aiCredits,
-              company: currentUser.company,
-              title: currentUser.title,
-              phone: currentUser.phone,
-              plan: currentUser.plan,
-              bdtPlanLabel: currentUser.bdtPlanLabel
-            }
-          }
-        })
-      })
-      .then(res => {
-        if (res.ok) setSyncStatus('synced');
-        else setSyncStatus('offline');
-      })
-      .catch(() => {
-        setSyncStatus('offline');
-      });
-    }, 800);
+      saveWorkspaceToDatabase();
+    }, 1200);
 
     return () => clearTimeout(timer);
   }, [
+    isAuthenticated,
+    currentUser?.email,
     leads,
     leadTags,
     smtpAccounts,
@@ -1074,61 +1090,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     sentEmails,
     minedLeads,
     columnSettings,
-    notificationSettings,
-    currentUser,
-    isAuthenticated
+    notificationSettings
   ]);
-
-  // Direct manual / immediate workspace save to database
-  const saveWorkspaceToDatabase = async (): Promise<boolean> => {
-    if (!isAuthenticated || !currentUser?.email) return false;
-    const cleanEmail = currentUser.email.trim().toLowerCase();
-    setSyncStatus('syncing');
-
-    try {
-      const res = await fetch(`/api/user-data/${encodeURIComponent(cleanEmail)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          data: {
-            leads,
-            leadTags,
-            smtpAccounts,
-            campaigns,
-            emailTemplates,
-            templateCategories,
-            threads,
-            sentEmails,
-            minedLeads,
-            columnSettings,
-            notificationSettings,
-            userProfile: {
-              quotaUsed: currentUser.quotaUsed,
-              quotaLimit: currentUser.quotaLimit,
-              aiCredits: currentUser.aiCredits,
-              company: currentUser.company,
-              title: currentUser.title,
-              phone: currentUser.phone,
-              plan: currentUser.plan,
-              bdtPlanLabel: currentUser.bdtPlanLabel
-            }
-          }
-        })
-      });
-
-      if (res.ok) {
-        setSyncStatus('synced');
-        return true;
-      } else {
-        setSyncStatus('offline');
-        return false;
-      }
-    } catch (err) {
-      console.warn('Direct workspace save error:', err);
-      setSyncStatus('offline');
-      return false;
-    }
-  };
 
   // Play notification audio using Web Audio API or custom audio
   const playNotificationSound = (overridePreset?: string) => {

@@ -1,0 +1,11 @@
+{
+  "leads": [
+    {
+      "id": "lead-1",
+      "name": "Test Lead"
+    }
+  ],
+  "campaigns": [],
+  "email": "rafiqulvisualsky@gmail.com",
+  "updatedAt": "2026-09-08T12:39:39.857Z"
+}

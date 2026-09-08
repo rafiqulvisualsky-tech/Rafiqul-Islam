@@ -124,7 +124,7 @@ export async function signInWithSupabase(
     return {
       success: true,
       user: {
-        id: matchedProfile?.id || `usr-supa-${Date.now()}`,
+        id: matchedProfile?.id || (cleanEmail === 'rafiqulvisualsky@gmail.com' ? 'user-agency-1' : `usr-${cleanEmail.replace(/[^a-z0-9]/g, '-')}`),
         email: cleanEmail,
         user_metadata: {
           name: matchedProfile?.name || cleanEmail.split('@')[0].replace('.', ' '),

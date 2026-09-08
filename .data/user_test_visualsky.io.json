@@ -1,0 +1,12 @@
+{
+  "leads": [
+    {
+      "id": "lead-2",
+      "name": "User Id Test"
+    }
+  ],
+  "campaigns": [],
+  "userId": "usr-test-123",
+  "email": "test@visualsky.io",
+  "updatedAt": "2026-09-08T12:39:44.134Z"
+}

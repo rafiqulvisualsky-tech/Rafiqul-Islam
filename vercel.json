@@ -4,6 +4,7 @@
     { "source": "/api/auth/send-otp", "destination": "/api/auth/send-otp" },
     { "source": "/api/auth/reset-password", "destination": "/api/auth/reset-password" },
     { "source": "/api/auth/verify-credentials", "destination": "/api/auth/verify-credentials" },
+    { "source": "/api/(.*)", "destination": "/api/index" },
     { "source": "/((?!api/.*).*)", "destination": "/index.html" }
   ]
 }

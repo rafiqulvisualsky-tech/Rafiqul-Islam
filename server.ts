@@ -26,6 +26,12 @@ if (!fs.existsSync(DATA_DIR)) {
   } catch {}
 }
 
+const getWorkspaceFilePath = (identifier: string) => {
+  const clean = (identifier || '').trim().toLowerCase();
+  const safe = clean.replace(/[^a-z0-9_.-]/g, '_');
+  return path.join(DATA_DIR, `workspace_${safe}.json`);
+};
+
 const getUserDataFilePath = (email: string) => {
   const cleanEmail = (email || '').trim().toLowerCase();
   const safeEmail = cleanEmail.replace(/[^a-z0-9_.-]/g, '_');
@@ -465,41 +471,157 @@ app.all('/api/auth/reset-password', (req, res) => {
 });
 
 // Central Database Storage Helpers
-function readUserWorkspace(email: string): any | null {
+function readUserWorkspace(primaryId?: string, secondaryId?: string): any | null {
   try {
-    const cleanEmail = (email || '').trim().toLowerCase();
-    const filePath = getUserDataFilePath(cleanEmail);
-    if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      return JSON.parse(content);
+    const candidates = [primaryId, secondaryId].filter(Boolean) as string[];
+    
+    // Also resolve email <-> userId from users registry
+    let existingUsers: any[] = [];
+    if (fs.existsSync(USERS_LIST_FILE)) {
+      try {
+        existingUsers = JSON.parse(fs.readFileSync(USERS_LIST_FILE, 'utf-8'));
+      } catch {}
+    }
+
+    for (const id of [primaryId, secondaryId].filter(Boolean) as string[]) {
+      const clean = id.trim().toLowerCase();
+      const matched = existingUsers.find(
+        (u: any) =>
+          u.email?.toLowerCase() === clean ||
+          u.id?.toLowerCase() === clean ||
+          u.supabaseId?.toLowerCase() === clean
+      );
+      if (matched) {
+        if (matched.id) candidates.push(matched.id);
+        if (matched.email) candidates.push(matched.email);
+        if (matched.supabaseId) candidates.push(matched.supabaseId);
+      }
+    }
+
+    const uniqueCandidates = Array.from(new Set(candidates.map(c => c.trim().toLowerCase())));
+
+    // Check workspace_{id}.json and user_{email}.json files
+    for (const cand of uniqueCandidates) {
+      const pathsToCheck = [
+        getWorkspaceFilePath(cand),
+        getUserDataFilePath(cand)
+      ];
+      for (const p of pathsToCheck) {
+        if (fs.existsSync(p)) {
+          const content = fs.readFileSync(p, 'utf-8');
+          const parsed = JSON.parse(content);
+          if (parsed && typeof parsed === 'object') {
+            return parsed;
+          }
+        }
+      }
     }
     return null;
   } catch (err) {
-    console.error('Failed to read workspace from database for:', email, err);
+    console.error('Failed to read workspace from database:', err);
     return null;
   }
 }
 
-function writeUserWorkspace(email: string, data: any): boolean {
+function writeUserWorkspace(primaryId: string, data: any, secondaryId?: string): boolean {
   try {
-    const cleanEmail = (email || '').trim().toLowerCase();
-    const filePath = getUserDataFilePath(cleanEmail);
-    const dir = path.dirname(filePath);
+    const idsToWrite = new Set<string>();
+    if (primaryId) idsToWrite.add(primaryId.trim().toLowerCase());
+    if (secondaryId) idsToWrite.add(secondaryId.trim().toLowerCase());
+    if (data?.email) idsToWrite.add(String(data.email).trim().toLowerCase());
+    if (data?.userId) idsToWrite.add(String(data.userId).trim().toLowerCase());
+
+    const dir = DATA_DIR;
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    // Atomic write to prevent partial reads or corruptions
-    const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 7)}`;
-    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf-8');
-    fs.renameSync(tempPath, filePath);
+
+    const jsonString = JSON.stringify(data, null, 2);
+
+    for (const id of idsToWrite) {
+      const paths = [
+        getWorkspaceFilePath(id),
+        getUserDataFilePath(id)
+      ];
+      for (const filePath of paths) {
+        try {
+          const tempPath = `${filePath}.tmp.${Date.now()}.${Math.random().toString(36).substring(2, 7)}`;
+          fs.writeFileSync(tempPath, jsonString, 'utf-8');
+          fs.renameSync(tempPath, filePath);
+        } catch (e) {
+          console.error('Atomic write failed for path:', filePath, e);
+        }
+      }
+    }
     return true;
   } catch (err) {
-    console.error('Failed to persist workspace to database for:', email, err);
+    console.error('Failed to persist workspace to database:', err);
     return false;
   }
 }
 
-// 1. GET /api/user-data/:email - Login Hydration & Real-time State Fetch
+// 0. GET /api/user-data/fetch - Instant Cross-Device Fetch by userId and/or email
+app.get('/api/user-data/fetch', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
+  try {
+    const userId = (req.query.userId as string) || '';
+    const email = (req.query.email as string) || '';
+
+    if (!userId && !email) {
+      return res.status(400).json({ success: false, error: 'userId or email is required' });
+    }
+
+    const workspace = readUserWorkspace(userId, email);
+    return res.json({
+      success: true,
+      data: workspace,
+      retrievedAt: new Date().toISOString()
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Database query failed' });
+  }
+});
+
+// 0. POST /api/user-data/save - Instant Cross-Device Save by userId and email
+app.post('/api/user-data/save', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
+  try {
+    const { userId, email, data } = req.body;
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ success: false, error: 'data object is required' });
+    }
+    if (!userId && !email) {
+      return res.status(400).json({ success: false, error: 'userId or email is required' });
+    }
+
+    const existing = readUserWorkspace(userId, email) || {};
+    const mergedWorkspace = {
+      ...existing,
+      ...data,
+      userId: userId || existing.userId,
+      email: email || existing.email,
+      updatedAt: new Date().toISOString()
+    };
+
+    const written = writeUserWorkspace(userId || email, mergedWorkspace, email || userId);
+    if (!written) {
+      return res.status(500).json({ success: false, error: 'Database write failed' });
+    }
+
+    return res.json({
+      success: true,
+      savedAt: mergedWorkspace.updatedAt
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message || 'Database save failed' });
+  }
+});
+
+// 1. GET /api/user-data/:identifier - Login Hydration & Real-time State Fetch
 app.get('/api/user-data/:email', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -507,16 +629,16 @@ app.get('/api/user-data/:email', (req, res) => {
   res.setHeader('Expires', '0');
 
   try {
-    const rawEmail = req.params.email || '';
-    const email = decodeURIComponent(rawEmail).trim().toLowerCase();
-    if (!email) {
-      return res.status(400).json({ success: false, error: 'Email is required for workspace access' });
+    const rawParam = req.params.email || '';
+    const identifier = decodeURIComponent(rawParam).trim();
+    if (!identifier) {
+      return res.status(400).json({ success: false, error: 'Identifier is required for workspace access' });
     }
 
-    const workspace = readUserWorkspace(email);
+    const workspace = readUserWorkspace(identifier);
     return res.json({
       success: true,
-      email,
+      identifier,
       data: workspace,
       retrievedAt: new Date().toISOString()
     });
@@ -526,16 +648,16 @@ app.get('/api/user-data/:email', (req, res) => {
   }
 });
 
-// 2. POST /api/user-data/:email - Full Workspace Save / Sync
+// 2. POST /api/user-data/:identifier - Full Workspace Save / Sync
 app.post('/api/user-data/:email', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
 
   try {
-    const rawEmail = req.params.email || '';
-    const email = decodeURIComponent(rawEmail).trim().toLowerCase();
-    if (!email) {
-      return res.status(400).json({ success: false, error: 'Email is required for workspace persistence' });
+    const rawParam = req.params.email || '';
+    const identifier = decodeURIComponent(rawParam).trim();
+    if (!identifier) {
+      return res.status(400).json({ success: false, error: 'Identifier is required for workspace persistence' });
     }
 
     const { data } = req.body;
@@ -543,22 +665,23 @@ app.post('/api/user-data/:email', (req, res) => {
       return res.status(400).json({ success: false, error: 'Valid workspace data object required' });
     }
 
-    const existing = readUserWorkspace(email) || {};
+    const existing = readUserWorkspace(identifier) || {};
     const mergedWorkspace = {
       ...existing,
       ...data,
-      email,
+      email: data.email || (identifier.includes('@') ? identifier : existing.email),
+      userId: data.userId || (!identifier.includes('@') ? identifier : existing.userId),
       updatedAt: new Date().toISOString()
     };
 
-    const written = writeUserWorkspace(email, mergedWorkspace);
+    const written = writeUserWorkspace(identifier, mergedWorkspace, mergedWorkspace.email || mergedWorkspace.userId);
     if (!written) {
       return res.status(500).json({ success: false, error: 'Failed writing workspace file' });
     }
 
     return res.json({
       success: true,
-      email,
+      identifier,
       savedAt: mergedWorkspace.updatedAt
     });
   } catch (err: any) {
