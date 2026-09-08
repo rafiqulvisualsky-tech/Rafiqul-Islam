@@ -309,7 +309,7 @@ app.all('/api/auth/send-otp', (req, res) => {
 });
 
 // Endpoint: Verify OTP and update password
-app.post('/api/auth/reset-password', (req, res) => {
+app.post('/api/auth/reset-password', async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
 
@@ -359,7 +359,36 @@ app.post('/api/auth/reset-password', (req, res) => {
     const userIndex = existingUsers.findIndex((u: any) => u.email?.toLowerCase() === cleanEmail);
     if (userIndex !== -1) {
       existingUsers[userIndex].password = newPassword;
-      fs.writeFileSync(USERS_LIST_FILE, JSON.stringify(existingUsers, null, 2), 'utf-8');
+    } else {
+      existingUsers.push({
+        id: `usr-${Date.now()}`,
+        email: cleanEmail,
+        name: cleanEmail.split('@')[0],
+        password: newPassword,
+        role: cleanEmail.includes('admin') || cleanEmail.includes('agency') || cleanEmail === 'rafiqulvisualsky@gmail.com' ? 'agency' : 'client',
+        isOwner: cleanEmail === 'rafiqulvisualsky@gmail.com' || cleanEmail.includes('admin'),
+        plan: 'Enterprise',
+        joinedAt: new Date().toISOString().split('T')[0]
+      });
+    }
+    fs.writeFileSync(USERS_LIST_FILE, JSON.stringify(existingUsers, null, 2), 'utf-8');
+
+    // Also attempt Supabase admin update if service role key is present
+    const supaUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const supaServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+    if (supaUrl && supaServiceKey) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const adminClient = createClient(supaUrl, supaServiceKey);
+        const { data: listData } = await adminClient.auth.admin.listUsers();
+        const supaUser = listData?.users?.find((u: any) => u.email?.toLowerCase() === cleanEmail);
+        if (supaUser) {
+          await adminClient.auth.admin.updateUserById(supaUser.id, { password: newPassword });
+          console.log(`[Supabase Admin] Successfully synced new password for ${cleanEmail}`);
+        }
+      } catch (supaErr: any) {
+        console.warn('[Supabase Admin] Sync error:', supaErr?.message);
+      }
     }
 
     return res.json({
@@ -369,6 +398,45 @@ app.post('/api/auth/reset-password', (req, res) => {
   } catch (err: any) {
     console.error('Failed to reset password:', err);
     return res.status(500).json({ success: false, error: 'Failed to reset password' });
+  }
+});
+
+// Endpoint: Verify credentials against server registry
+app.post('/api/auth/verify-credentials', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ success: false, error: 'Email and password are required' });
+    }
+    const cleanEmail = email.trim().toLowerCase();
+
+    let existingUsers: any[] = [];
+    if (fs.existsSync(USERS_LIST_FILE)) {
+      try {
+        existingUsers = JSON.parse(fs.readFileSync(USERS_LIST_FILE, 'utf-8'));
+      } catch {}
+    }
+
+    const user = existingUsers.find((u: any) => u.email?.toLowerCase() === cleanEmail);
+    if (user && user.password && user.password === password) {
+      return res.json({
+        success: true,
+        user: {
+          id: user.id || `usr-${Date.now()}`,
+          email: user.email,
+          name: user.name || cleanEmail.split('@')[0],
+          role: user.role || 'agency',
+          isOwner: user.isOwner !== false,
+          plan: user.plan || 'Enterprise',
+          phone: user.phone || '+880 1712-345678'
+        }
+      });
+    }
+
+    return res.status(401).json({ success: false, error: 'Invalid login credentials' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: 'Authentication verification failed' });
   }
 });
 

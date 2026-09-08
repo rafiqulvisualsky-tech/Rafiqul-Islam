@@ -56,6 +56,21 @@ export default async function handler(req: any, res: any) {
       });
     }
 
+    // If Supabase service role key is present in Vercel env, update user password in Supabase directly
+    const supaUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const supaServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+    if (supaUrl && supaServiceKey) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const adminClient = createClient(supaUrl, supaServiceKey);
+        const { data: listData } = await adminClient.auth.admin.listUsers();
+        const supaUser = listData?.users?.find((u: any) => u.email?.toLowerCase() === cleanEmail);
+        if (supaUser) {
+          await adminClient.auth.admin.updateUserById(supaUser.id, { password: newPassword });
+        }
+      } catch {}
+    }
+
     return res.status(200).json({
       success: true,
       message: `Password for ${cleanEmail} successfully updated.`

@@ -2432,27 +2432,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail) return false;
 
+    // 1. Immediately cache in visualsky_reset_passwords for cross-tab and cross-modal lookup
+    try {
+      const resetStore = JSON.parse(localStorage.getItem('visualsky_reset_passwords') || '{}');
+      resetStore[cleanEmail] = newPass;
+      localStorage.setItem('visualsky_reset_passwords', JSON.stringify(resetStore));
+    } catch {}
+
+    // 2. Update user in state & localStorage
     setAllUsers(prev => {
       const existingIndex = prev.findIndex(u => u.email?.toLowerCase() === cleanEmail);
       let updated: UserAccount[];
       if (existingIndex >= 0) {
         updated = prev.map((u, i) => (i === existingIndex ? { ...u, password: newPass } : u));
       } else {
+        const isAgency = cleanEmail.includes('admin') || cleanEmail.includes('agency') || cleanEmail === 'rafiqulvisualsky@gmail.com';
         const newUser: UserAccount = {
           id: `usr-${Date.now()}`,
           name: cleanEmail.split('@')[0],
           email: cleanEmail,
-          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+          avatar: isAgency 
+            ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+            : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
           password: newPass,
-          role: 'agency',
-          isOwner: true,
-          plan: 'Enterprise',
-          bdtPlanLabel: 'Agency Master Admin (Free Unlimited)',
+          role: isAgency ? 'agency' : 'client',
+          isOwner: isAgency,
+          plan: isAgency ? 'Enterprise' : 'Pro',
+          bdtPlanLabel: isAgency ? 'Agency Master Admin (Free Unlimited)' : 'Scale Business (BDT 4,999/mo)',
           quotaUsed: 0,
-          quotaLimit: 50000,
-          aiCredits: 10000,
-          company: 'Visual Sky',
-          title: 'Agency Master User',
+          quotaLimit: isAgency ? 50000 : 5000,
+          aiCredits: isAgency ? 10000 : 2500,
+          company: isAgency ? 'Visual Sky' : 'Client Workspace',
+          title: isAgency ? 'Agency Master User' : 'Client Member',
           joinedAt: new Date().toISOString().split('T')[0]
         };
         updated = [...prev, newUser];
@@ -2460,6 +2471,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         localStorage.setItem('visualsky_users', JSON.stringify(updated));
       } catch {}
+
+      // 3. Sync to server backend
+      try {
+        fetch('/api/users/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ users: updated })
+        }).catch(() => {});
+      } catch {}
+
       return updated;
     });
 

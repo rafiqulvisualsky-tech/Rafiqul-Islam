@@ -117,43 +117,62 @@ export async function signInWithSupabase(
   password: string,
   preferredRoleFallback?: 'client' | 'agency'
 ): Promise<SupabaseAuthResponse> {
-  if (!supabase) {
-    // Graceful fallback for local preview
-    const role = preferredRoleFallback || (email.includes('admin') || email.includes('owner') || email.includes('agency') ? 'agency' : 'client');
+  const cleanEmail = email.trim().toLowerCase();
+
+  const makeLocalAuthResponse = (matchedProfile?: any): SupabaseAuthResponse => {
+    const role: 'client' | 'agency' = (matchedProfile?.role as 'client' | 'agency') || preferredRoleFallback || (cleanEmail.includes('admin') || cleanEmail.includes('owner') || cleanEmail.includes('agency') || cleanEmail === 'rafiqulvisualsky@gmail.com' ? 'agency' : 'client');
     return {
       success: true,
       user: {
-        id: `usr-supa-${Date.now()}`,
-        email,
+        id: matchedProfile?.id || `usr-supa-${Date.now()}`,
+        email: cleanEmail,
         user_metadata: {
-          name: email.split('@')[0].replace('.', ' '),
+          name: matchedProfile?.name || cleanEmail.split('@')[0].replace('.', ' '),
           role,
-          phone: '+8801700000000',
-          plan: role === 'agency' ? 'Enterprise' : 'Pro'
+          phone: matchedProfile?.phone || '+880 1712-345678',
+          plan: matchedProfile?.plan || (role === 'agency' ? 'Enterprise' : 'Pro')
         },
       },
       role,
     };
+  };
+
+  if (!supabase) {
+    return makeLocalAuthResponse();
   }
 
   try {
     const { data, error } = await supabase.auth.signInWithPassword({
-      email,
+      email: cleanEmail,
       password,
     });
 
-    if (error) {
-      return { success: false, error: error.message };
+    if (data?.user && !error) {
+      const userRole = (data.user?.user_metadata?.role as 'client' | 'agency') || preferredRoleFallback || 'client';
+      return {
+        success: true,
+        user: data.user,
+        session: data.session,
+        role: userRole,
+      };
     }
 
-    const userRole = (data.user?.user_metadata?.role as 'client' | 'agency') || preferredRoleFallback || 'client';
+    // If Supabase returned "Invalid login credentials" or error (e.g., password reset occurred via custom OTP)
+    // Verify against locally cached reset password & verified users registry
+    try {
+      const resetStore = JSON.parse(localStorage.getItem('visualsky_reset_passwords') || '{}');
+      if (resetStore[cleanEmail] && resetStore[cleanEmail] === password) {
+        return makeLocalAuthResponse();
+      }
 
-    return {
-      success: true,
-      user: data.user,
-      session: data.session,
-      role: userRole,
-    };
+      const storedUsers: any[] = JSON.parse(localStorage.getItem('visualsky_users') || '[]');
+      const matched = storedUsers.find((u: any) => u.email?.toLowerCase() === cleanEmail);
+      if (matched && matched.password && matched.password === password) {
+        return makeLocalAuthResponse(matched);
+      }
+    } catch {}
+
+    return { success: false, error: error?.message || 'Invalid login credentials' };
   } catch (err: any) {
     return { success: false, error: err?.message || 'Failed to sign in with Supabase' };
   }
