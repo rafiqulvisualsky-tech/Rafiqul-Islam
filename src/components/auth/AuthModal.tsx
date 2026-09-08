@@ -204,6 +204,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [newResetPassword, setNewResetPassword] = useState<string>('');
   const [confirmResetPassword, setConfirmResetPassword] = useState<string>('');
   const [forgotPhase, setForgotPhase] = useState<'request' | 'verify' | 'success'>('request');
+  const [otpToken, setOtpToken] = useState<string>('');
 
   // OTP Resend Countdown Timer
   useEffect(() => {
@@ -805,12 +806,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       });
       clearTimeout(timeoutId);
 
-      const { ok, data } = await parseSafeApiResponse(res);
-      if (!ok && data?.error) {
-        throw new Error(data.error);
+      const { ok, data, errorMessage: apiError } = await parseSafeApiResponse(res);
+      if (!ok || !data?.success) {
+        const failureReason = safeString(data?.error) || safeString(apiError) || 'Failed to dispatch verification code to email.';
+        throw new Error(failureReason);
+      }
+
+      if (data?.otpToken) {
+        setOtpToken(data.otpToken);
       }
     } catch (err: any) {
       console.warn('Server send-otp request:', err);
+      setIsLoading(false);
+      setErrorMessage(err?.message || 'Failed to dispatch 6-digit code. Please check your network and try again.');
+      return;
     }
 
     // Transition to Phase 2 (Verify)
@@ -868,9 +877,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       });
       clearTimeout(timeoutId);
 
-      await parseSafeApiResponse(res);
+      const { ok, data, errorMessage: apiError } = await parseSafeApiResponse(res);
+      if (!ok || !data?.success) {
+        const failureReason = safeString(data?.error) || safeString(apiError) || 'Failed to resend verification code.';
+        throw new Error(failureReason);
+      }
+
+      if (data?.otpToken) {
+        setOtpToken(data.otpToken);
+      }
     } catch (err: any) {
       console.warn('Resend OTP request error:', err);
+      setIsLoading(false);
+      setErrorMessage(err?.message || 'Failed to resend verification code. Please check your network and try again.');
+      return;
     }
 
     setOtpDigits(['', '', '', '', '', '']);
@@ -991,7 +1011,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         body: JSON.stringify({
           email: targetEmail,
           otp: finalOtp,
-          newPassword: newResetPassword
+          newPassword: newResetPassword,
+          otpToken
         })
       });
 

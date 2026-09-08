@@ -7,8 +7,11 @@ import { GoogleGenAI } from '@google/genai';
 import nodemailer from 'nodemailer';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
+import crypto from 'crypto';
 
 dotenv.config();
+
+const OTP_SECRET = process.env.OTP_SECRET || 'visualsky-secure-otp-signature-key-2026';
 
 const app = express();
 const PORT = 3000;
@@ -109,6 +112,10 @@ app.post('/api/auth/send-otp', async (req, res) => {
     const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes validity
     otpStore.set(cleanEmail, { code: otpCode, expiresAt });
 
+    // Create cryptographic HMAC token for stateless verification across serverless lambdas
+    const signature = crypto.createHmac('sha256', OTP_SECRET).update(`${cleanEmail}:${otpCode}:${expiresAt}`).digest('hex');
+    const otpToken = `${expiresAt}:${signature}`;
+
     // Look for configured SMTP relay to send the email
     let sentViaRealSmtp = false;
     let senderAddress = 'founder@visualsky.pro';
@@ -136,41 +143,42 @@ app.post('/api/auth/send-otp', async (req, res) => {
       </div>
     `;
 
-    // 1. Primary: Use Verified System SMTP Relay from environment (e.g. mail.visualsky.pro)
-    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-      try {
-        const sysPort = Number(process.env.SMTP_PORT) || 465;
-        const sysSecure = process.env.SMTP_SECURE === 'true' || sysPort === 465;
-        const fromAddr = process.env.SMTP_FROM || process.env.SMTP_USER || 'founder@visualsky.pro';
+    // 1. Primary: Use Verified System SMTP Relay (mail.visualsky.pro)
+    const sysHost = process.env.SMTP_HOST || 'mail.visualsky.pro';
+    const sysPort = Number(process.env.SMTP_PORT) || 465;
+    const sysUser = process.env.SMTP_USER || 'founder@visualsky.pro';
+    const sysPass = process.env.SMTP_PASS || 'Vsky3836@';
+    const sysSecure = process.env.SMTP_SECURE === 'true' || sysPort === 465;
+    const fromAddr = process.env.SMTP_FROM || sysUser;
 
-        const transporter = nodemailer.createTransport({
-          host: process.env.SMTP_HOST,
-          port: sysPort,
-          secure: sysSecure,
-          auth: {
-            user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASS
-          },
-          tls: { rejectUnauthorized: false },
-          connectionTimeout: 15000,
-          greetingTimeout: 10000,
-          socketTimeout: 20000
-        });
+    try {
+      const transporter = nodemailer.createTransport({
+        host: sysHost,
+        port: sysPort,
+        secure: sysSecure,
+        auth: {
+          user: sysUser,
+          pass: sysPass
+        },
+        tls: { rejectUnauthorized: false },
+        connectionTimeout: 15000,
+        greetingTimeout: 10000,
+        socketTimeout: 20000
+      });
 
-        const sendResult = await transporter.sendMail({
-          from: `"VisualSky Security" <${fromAddr}>`,
-          replyTo: fromAddr,
-          to: cleanEmail,
-          subject: emailSubject,
-          text: emailText,
-          html: emailHtml
-        });
+      const sendResult = await transporter.sendMail({
+        from: `"VisualSky Security" <${fromAddr}>`,
+        replyTo: fromAddr,
+        to: cleanEmail,
+        subject: emailSubject,
+        text: emailText,
+        html: emailHtml
+      });
 
-        console.log(`[OTP System] Dispatched 6-digit OTP code to ${cleanEmail} via system SMTP (${process.env.SMTP_HOST}). Message ID: ${sendResult.messageId}`);
-        sentViaRealSmtp = true;
-      } catch (sysErr: any) {
-        console.error('[OTP System] Primary System SMTP dispatch failed:', sysErr?.message);
-      }
+      console.log(`[OTP System] Dispatched 6-digit OTP code to ${cleanEmail} via system SMTP (${sysHost}). Message ID: ${sendResult.messageId}`);
+      sentViaRealSmtp = true;
+    } catch (sysErr: any) {
+      console.error('[OTP System] Primary System SMTP dispatch failed:', sysErr?.message);
     }
 
     // 2. Secondary: If system SMTP was not available or failed, try Resend API
@@ -285,6 +293,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
         ? `A 6-digit verification code has been dispatched to ${cleanEmail}. Please check your email inbox and spam folder.`
         : `A 6-digit verification code has been generated for ${cleanEmail}. Please check your email.`,
       sentViaRealSmtp,
+      otpToken,
       // Provide fallback OTP only if real SMTP delivery failed so user is never locked out
       emergencyOtp: sentViaRealSmtp ? undefined : otpCode
     });
@@ -305,21 +314,38 @@ app.post('/api/auth/reset-password', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
 
   try {
-    const { email, otp, newPassword } = req.body || {};
+    const { email, otp, newPassword, otpToken } = req.body || {};
     if (!email || !otp || !newPassword) {
       return res.status(400).json({ success: false, error: 'Email, OTP, and new password are required' });
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const stored = otpStore.get(cleanEmail);
+    const cleanOtp = otp.trim();
+    let isValidOtp = false;
 
-    if (!stored || stored.code !== otp.trim()) {
-      return res.status(400).json({ success: false, error: 'Invalid or expired 6-digit verification code. Please request a new code.' });
+    // 1. Check in-memory store
+    const stored = otpStore.get(cleanEmail);
+    if (stored && stored.code === cleanOtp) {
+      if (Date.now() <= stored.expiresAt) {
+        isValidOtp = true;
+        otpStore.delete(cleanEmail);
+      }
     }
 
-    if (Date.now() > stored.expiresAt) {
-      otpStore.delete(cleanEmail);
-      return res.status(400).json({ success: false, error: 'Verification code has expired. Please request a new one.' });
+    // 2. Check cryptographic HMAC token (works across serverless lambdas / multi-instance deploys)
+    if (!isValidOtp && otpToken && typeof otpToken === 'string') {
+      const [tokenExpiresAtStr, tokenSignature] = otpToken.split(':');
+      const tokenExpiresAt = Number(tokenExpiresAtStr);
+      if (tokenExpiresAt && Date.now() <= tokenExpiresAt) {
+        const expectedSignature = crypto.createHmac('sha256', OTP_SECRET).update(`${cleanEmail}:${cleanOtp}:${tokenExpiresAt}`).digest('hex');
+        if (tokenSignature === expectedSignature) {
+          isValidOtp = true;
+        }
+      }
+    }
+
+    if (!isValidOtp) {
+      return res.status(400).json({ success: false, error: 'Invalid or expired 6-digit verification code. Please request a new code.' });
     }
 
     // Update password in registry
@@ -335,9 +361,6 @@ app.post('/api/auth/reset-password', (req, res) => {
       existingUsers[userIndex].password = newPassword;
       fs.writeFileSync(USERS_LIST_FILE, JSON.stringify(existingUsers, null, 2), 'utf-8');
     }
-
-    // Clear used OTP
-    otpStore.delete(cleanEmail);
 
     return res.json({
       success: true,
@@ -1716,4 +1739,9 @@ async function startServer() {
   });
 }
 
-startServer();
+// Start server if not running inside a serverless handler
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
