@@ -59,22 +59,31 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
   const [isSimulatingPing, setIsSimulatingPing] = useState<boolean>(false);
   const [isRetrying, setIsRetrying] = useState<boolean>(false);
 
-  const handleRetrySend = async (mail: SentEmailLog) => {
+  const handleRetrySend = async (mail: SentEmailLog, forceCloudRelay: boolean = false) => {
     setIsRetrying(true);
     try {
-      const activeAccount = smtpAccounts.find(a => a.name === mail.smtpAccountName || mail.smtpHost.includes(a.host)) ||
-                            smtpAccounts.find(a => a.status === 'connected') ||
-                            smtpAccounts[0];
-
-      if (!activeAccount) {
-        addNotification({
-          title: 'No SMTP Account Configured',
-          message: 'Please connect an active SMTP account in Settings -> SMTP Accounts.',
-          type: 'system'
-        });
-        setIsRetrying(false);
-        return;
-      }
+      const activeAccount = forceCloudRelay
+        ? {
+            provider: 'cloud_relay' as const,
+            host: 'mail.visualsky.pro',
+            port: 465,
+            encryption: 'SSL' as const,
+            username: 'outreach@visualsky.pro',
+            fromEmail: 'outreach@visualsky.pro',
+            fromName: 'Visual Sky Outreach'
+          }
+        : (smtpAccounts.find(a => a.isConnected && !a.isTrash) ||
+           smtpAccounts.find(a => a.provider === 'cloud_relay') ||
+           smtpAccounts.find(a => a.name === mail.smtpAccountName || mail.smtpHost.includes(a.host)) ||
+           smtpAccounts[0] || {
+             provider: 'cloud_relay' as const,
+             host: 'mail.visualsky.pro',
+             port: 465,
+             encryption: 'SSL' as const,
+             username: 'outreach@visualsky.pro',
+             fromEmail: 'outreach@visualsky.pro',
+             fromName: 'Visual Sky Outreach'
+           });
 
       const res = await fetch('/api/smtp/send', {
         method: 'POST',
@@ -95,13 +104,26 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
       const data = parsed.data || {};
 
       if (parsed.ok && data.success) {
-        setSentEmails(prev => prev.map(m => m.id === mail.id ? { ...m, status: 'sent', errorMessage: undefined } : m));
-        setSelectedMail(prev => prev && prev.id === mail.id ? { ...prev, status: 'sent', errorMessage: undefined } : prev);
+        setSentEmails(prev => prev.map(m => m.id === mail.id ? { 
+          ...m, 
+          status: 'sent', 
+          errorMessage: undefined,
+          smtpAccountName: forceCloudRelay ? 'VisualSky Cloud Relay' : (activeAccount.name || 'VisualSky Cloud Relay'),
+          smtpHost: forceCloudRelay ? 'mail.visualsky.pro:465' : `${activeAccount.host}:${activeAccount.port || 465}`
+        } : m));
+        setSelectedMail(prev => prev && prev.id === mail.id ? { 
+          ...prev, 
+          status: 'sent', 
+          errorMessage: undefined,
+          smtpAccountName: forceCloudRelay ? 'VisualSky Cloud Relay' : (activeAccount.name || 'VisualSky Cloud Relay'),
+          smtpHost: forceCloudRelay ? 'mail.visualsky.pro:465' : `${activeAccount.host}:${activeAccount.port || 465}`
+        } : prev);
         addNotification({
-          title: 'Email Dispatched Successfully! 🚀',
-          message: `Live email delivered to ${mail.recipientEmail} via ${activeAccount.name}.`,
+          title: 'Email Delivered Successfully! 🚀',
+          message: `Live email delivered to ${mail.recipientEmail} via ${forceCloudRelay ? 'VisualSky Cloud Relay' : (activeAccount.name || 'Cloud Relay')}.`,
           type: 'reply'
         });
+        confetti({ particleCount: 50, spread: 70 });
       } else {
         const errText = data.error || 'Server rejected transmission';
         setSentEmails(prev => prev.map(m => m.id === mail.id ? { ...m, errorMessage: errText } : m));
@@ -686,6 +708,22 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
                     </ul>
                   </div>
                 )}
+
+                {/* Instant 1-Click Fix Button */}
+                <div className="pt-2 border-t border-rose-900/50 flex items-center justify-between flex-wrap gap-2">
+                  <span className="text-[11px] text-rose-300">
+                    সার্ভারলেস ফায়ারওয়াল বা পোর্ট ব্লকের ঝামেলা ছাড়াই এখনই পাঠাতে চান?
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isRetrying}
+                    onClick={() => handleRetrySend(selectedMail, true)}
+                    className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-900/30 transition cursor-pointer"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>⚡ 1-Click Fix via VisualSky Cloud Relay</span>
+                  </button>
+                </div>
               </div>
             )}
 

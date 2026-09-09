@@ -332,8 +332,27 @@ export const INITIAL_TEMPLATES: EmailTemplate[] = [
 // Initial Threads (Clean empty initial list)
 const INITIAL_THREADS: EmailThread[] = [];
 
-// Initial SMTP Relays (Clean empty initial list)
-const INITIAL_SMTP: SMTPAccount[] = [];
+// Initial SMTP Relays (Pre-configured ready-to-go outbox)
+const INITIAL_SMTP: SMTPAccount[] = [
+  {
+    id: 'smtp-visualsky-cloud-1',
+    name: 'VisualSky Cloud Relay (Default Ready)',
+    provider: 'cloud_relay',
+    host: 'mail.visualsky.pro',
+    port: 465,
+    encryption: 'SSL',
+    username: 'outreach@visualsky.pro',
+    fromName: 'Visual Sky Outreach',
+    fromEmail: 'outreach@visualsky.pro',
+    dailyLimit: 2500,
+    sentToday: 0,
+    warmupStatus: 'active',
+    healthScore: 100,
+    isConnected: true,
+    isTrash: false,
+    notes: 'Default zero-config high-speed cloud outbound relay.'
+  }
+];
 
 // Initial Sent Email Logs (Clean empty initial list)
 const INITIAL_SENT_LOGS: SentEmailLog[] = [];
@@ -2280,12 +2299,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Direct Outbound Email Sender
   const sendDirectEmail = async (payload: DirectSendMailPayload): Promise<boolean> => {
-    const smtp = smtpAccounts.find(s => s.id === payload.senderSmtpId) || smtpAccounts[0];
+    const smtp = smtpAccounts.find(s => s.id === payload.senderSmtpId && !s.isTrash) || 
+                 smtpAccounts.find(s => !s.isTrash && s.isConnected) || 
+                 smtpAccounts[0];
 
-    if (!smtp || !smtp.host || !smtp.username || !smtp.password) {
+    const hasValidConfig = smtp && (
+      smtp.provider === 'cloud_relay' ||
+      ((smtp.provider === 'resend' || smtp.apiKey?.startsWith('re_')) && (smtp.apiKey || smtp.password)) ||
+      ((smtp.provider === 'brevo' || smtp.apiKey?.startsWith('xkeysib-')) && (smtp.apiKey || smtp.password)) ||
+      (smtp.host && smtp.username && (smtp.password || smtp.apiKey))
+    );
+
+    if (!hasValidConfig) {
       addNotification({
-        title: '❌ Sending Failed: No SMTP Account',
-        message: 'Please connect a valid SMTP account with password in Settings -> SMTP Accounts before sending.',
+        title: '⚠️ Connect Email Account',
+        message: 'Please connect your Gmail, Webmail, or Resend API key in Settings -> SMTP Accounts to send emails.',
         type: 'system',
         linkTab: 'smtp'
       });

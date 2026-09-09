@@ -138,7 +138,7 @@ export interface SMTPScheduleSettings {
 export interface SMTPAccount {
   id: string;
   name: string;
-  provider: 'resend' | 'brevo' | 'domain_webmail' | 'gmail' | 'outlook' | 'ses' | 'sendgrid' | 'mailgun' | 'zoho' | 'hostinger' | 'custom';
+  provider: 'resend' | 'brevo' | 'domain_webmail' | 'gmail' | 'outlook' | 'ses' | 'sendgrid' | 'mailgun' | 'zoho' | 'hostinger' | 'custom' | 'cloud_relay';
   host: string;
   port: number;
   encryption: 'STARTTLS' | 'SSL' | 'TLS' | 'NONE';
