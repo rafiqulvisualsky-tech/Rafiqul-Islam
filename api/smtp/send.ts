@@ -218,27 +218,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    // 3. VisualSky Instant Cloud Relay (Instant Zero-Hassle Sending)
-    if (activeSmtp.provider === 'cloud_relay') {
-      if (process.env.RESEND_API_KEY) {
-        // Transparently upgrade to server Resend key
-        activeSmtp.provider = 'resend';
-        activeSmtp.apiKey = process.env.RESEND_API_KEY;
-        activeSmtp.fromEmail = process.env.SMTP_FROM || 'onboarding@resend.dev';
-      } else {
-        return res.status(200).json({
-          success: true,
-          messageId: `vsky-cloud-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-          status: 'sent',
-          trackingPixelId: pixelId,
-          deliveredAt: new Date().toISOString(),
-          relay: 'VisualSky High-Speed Cloud Outbox',
-          note: 'Delivered via VisualSky instant cloud cluster'
-        });
-      }
-    }
-
-    // 4. Custom Nodemailer SMTP Socket Relay (Port 465 / 587 with Auto Port Negotiation)
+    // 3. Custom Nodemailer SMTP Socket Relay (Port 465 / 587)
     if (!activeSmtp.host) {
       return res.status(400).json({
         success: false,
@@ -247,8 +227,26 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const primaryPort = Number(activeSmtp.port) || 465;
-    const isSecure = activeSmtp.encryption === 'SSL' || primaryPort === 465;
+    const port = Number(activeSmtp.port) || 465;
+    const isSecure = activeSmtp.encryption === 'SSL' || port === 465;
+
+    // In Serverless (Vercel), enforce tight 7.5s connection and socket timeouts to prevent Vercel 10s execution kill
+    const transporter = nodemailer.createTransport({
+      host: activeSmtp.host,
+      port,
+      secure: isSecure,
+      requireTLS: port === 587,
+      auth: {
+        user: activeSmtp.username,
+        pass: authKey
+      },
+      connectionTimeout: 6500,
+      greetingTimeout: 6500,
+      socketTimeout: 7500,
+      tls: {
+        rejectUnauthorized: false
+      }
+    });
 
     const mailOptions: any = {
       from: `"${senderDisplayName}" <${senderEmail}>`,
@@ -263,98 +261,52 @@ export default async function handler(req: any, res: any) {
       }
     };
 
-    // Helper to attempt dispatch
-    const attemptSend = async (targetPort: number, secure: boolean, timeoutLimit: number = 5500) => {
-      const transporter = nodemailer.createTransport({
-        host: activeSmtp.host,
-        port: targetPort,
-        secure,
-        requireTLS: targetPort === 587,
-        auth: {
-          user: activeSmtp.username,
-          pass: authKey
-        },
-        connectionTimeout: timeoutLimit,
-        greetingTimeout: timeoutLimit,
-        socketTimeout: timeoutLimit + 1000,
-        tls: { rejectUnauthorized: false }
+    try {
+      const sendPromise = transporter.sendMail(mailOptions);
+      // Hard timeout promise at 8 seconds so it responds before Vercel can ever kill the lambda
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          const timeoutErr: any = new Error(`Connection timed out after 8s while connecting to ${activeSmtp.host}:${port}.`);
+          timeoutErr.code = 'ETIMEDOUT';
+          reject(timeoutErr);
+        }, 8000);
       });
 
-      try {
-        const sendPromise = transporter.sendMail(mailOptions);
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => {
-            const timeoutErr: any = new Error(`Connection timed out after ${Math.round(timeoutLimit / 1000)}s on ${activeSmtp.host}:${targetPort}`);
-            timeoutErr.code = 'ETIMEDOUT';
-            reject(timeoutErr);
-          }, timeoutLimit);
-        });
-
-        const info: any = await Promise.race([sendPromise, timeoutPromise]);
-        return { success: true, info, portUsed: targetPort };
-      } catch (err: any) {
-        return { success: false, error: err };
-      } finally {
-        try {
-          transporter.close();
-        } catch {}
-      }
-    };
-
-    // Try primary port
-    let result = await attemptSend(primaryPort, isSecure, 5000);
-
-    // If primary port failed with timeout or socket drop, try alternative port
-    if (!result.success) {
-      const isTimeoutOrSocket = result.error?.code === 'ETIMEDOUT' || 
-                                result.error?.code === 'ESOCKET' || 
-                                result.error?.code === 'ECONNREFUSED' ||
-                                (result.error?.message && result.error.message.toLowerCase().includes('timed out'));
-
-      if (isTimeoutOrSocket) {
-        const altPort = primaryPort === 465 ? 587 : 465;
-        const altSecure = altPort === 465;
-        console.log(`[SMTP FAILOVER] Primary Port ${primaryPort} dropped. Trying alternative Port ${altPort}...`);
-        const fallbackResult = await attemptSend(altPort, altSecure, 5000);
-        if (fallbackResult.success) {
-          result = fallbackResult;
-        }
-      }
-    }
-
-    if (result.success && result.info) {
+      const info: any = await Promise.race([sendPromise, timeoutPromise]);
       return res.status(200).json({
         success: true,
-        messageId: result.info.messageId,
+        messageId: info.messageId,
         status: 'sent',
         trackingPixelId: pixelId,
         deliveredAt: new Date().toISOString(),
-        accepted: result.info.accepted,
-        relay: `${activeSmtp.host}:${result.portUsed || primaryPort}`
+        accepted: info.accepted,
+        relay: `${activeSmtp.host}:${port}`
       });
-    }
-
-    const sendErr = result.error;
-    let friendlyError = sendErr?.message || 'Transmission rejected by remote SMTP server';
-    
-    if (sendErr?.code === 'EAUTH' || friendlyError.includes('535') || friendlyError.toLowerCase().includes('auth')) {
-      if (activeSmtp.host.includes('gmail.com') || activeSmtp.username?.endsWith('@gmail.com')) {
-        friendlyError = `Gmail Authentication Failed (535): Google requires a 16-character App Password (not your Gmail login password). Create one at myaccount.google.com/apppasswords.`;
-      } else {
-        friendlyError = `Authentication failed: Remote SMTP server rejected username "${activeSmtp.username}" or password. For cPanel, enter your full email address.`;
+    } catch (sendErr: any) {
+      console.error('SMTP transmission failure on live send:', sendErr?.message);
+      let friendlyError = sendErr?.message || 'Transmission rejected by remote SMTP server';
+      
+      if (sendErr?.code === 'EAUTH' || friendlyError.includes('535') || friendlyError.toLowerCase().includes('auth')) {
+        friendlyError = `Authentication failed: Remote SMTP server rejected username "${activeSmtp.username}" or password. Please verify credentials.`;
+      } else if (sendErr?.code === 'ETIMEDOUT' || sendErr?.code === 'ESOCKET' || friendlyError.includes('timed out')) {
+        friendlyError = `Connection timed out: Server at ${activeSmtp.host}:${port} did not respond within 8 seconds. Cloud serverless IPs may be blocked by your hosting firewall. Tip: Try switching to Port 587 (TLS), check cPanel IP blocking, or use Resend/Brevo API.`;
+      } else if (sendErr?.code === 'EDNS' || sendErr?.code === 'ENOTFOUND') {
+        friendlyError = `DNS host resolution error: Could not resolve hostname "${activeSmtp.host}".`;
+      } else if (sendErr?.code === 'ECONNREFUSED') {
+        friendlyError = `Connection refused by remote host ${activeSmtp.host}:${port}. Port may be closed.`;
       }
-    } else if (sendErr?.code === 'ETIMEDOUT' || sendErr?.code === 'ESOCKET' || friendlyError.includes('timed out')) {
-      friendlyError = `Connection timed out: Server at ${activeSmtp.host} did not respond on Port 465 or 587. Your hosting firewall may block cloud connections. Tip: Switch to Resend or Brevo API (HTTPS 443) for 100% reliable sending.`;
-    } else if (sendErr?.code === 'EDNS' || sendErr?.code === 'ENOTFOUND') {
-      friendlyError = `DNS host resolution error: Could not resolve hostname "${activeSmtp.host}".`;
-    }
 
-    return res.status(400).json({
-      success: false,
-      error: `SMTP Relay Error: ${friendlyError}`,
-      code: sendErr?.code || 'SEND_FAIL',
-      status: 'failed'
-    });
+      return res.status(400).json({
+        success: false,
+        error: `SMTP Relay Error: ${friendlyError}`,
+        code: sendErr?.code || 'SEND_FAIL',
+        status: 'failed'
+      });
+    } finally {
+      try {
+        transporter.close();
+      } catch {}
+    }
   } catch (err: any) {
     console.error('Unhandled error in /api/smtp/send:', err);
     return res.status(500).json({

@@ -176,10 +176,10 @@ export const SMTPManager: React.FC = () => {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { id: 'cloud_relay', label: '⚡ VisualSky Cloud (1-Click)', icon: Zap, color: 'text-emerald-300 border-emerald-500/40 bg-emerald-950/30 hover:border-emerald-400' },
-              { id: 'resend', label: 'Resend API (100% Reliable)', icon: ShieldCheck, color: 'text-cyan-400 border-cyan-500/30 bg-cyan-950/20 hover:border-cyan-400' },
+              { id: 'domain_webmail', label: 'Domain Webmail / cPanel', icon: Globe, color: 'text-cyan-400 border-cyan-500/30 bg-cyan-950/20 hover:border-cyan-400' },
               { id: 'gmail', label: 'Google Workspace', icon: Mail, color: 'text-blue-400 border-blue-500/30 bg-blue-950/20 hover:border-blue-400' },
-              { id: 'domain_webmail', label: 'Domain Webmail / cPanel', icon: Globe, color: 'text-teal-400 border-teal-500/30 bg-teal-950/20 hover:border-teal-400' },
+              { id: 'ses', label: 'Amazon SES Pool', icon: Server, color: 'text-amber-400 border-amber-500/30 bg-amber-950/20 hover:border-amber-400' },
+              { id: 'hostinger', label: 'Hostinger / Titan', icon: Lock, color: 'text-purple-400 border-purple-500/30 bg-purple-950/20 hover:border-purple-400' },
             ].map((p) => {
               const Icon = p.icon;
               return (
@@ -240,17 +240,7 @@ export const SMTPManager: React.FC = () => {
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5">
                           <div className="w-9 h-9 rounded-xl bg-slate-800/90 border border-slate-700 flex items-center justify-center text-cyan-400 shrink-0 shadow-inner">
-                            {smtp.provider === 'cloud_relay' ? (
-                              <Zap className="w-4 h-4 text-emerald-400" />
-                            ) : smtp.provider === 'resend' ? (
-                              <ShieldCheck className="w-4 h-4 text-cyan-400" />
-                            ) : smtp.provider === 'gmail' ? (
-                              <Mail className="w-4 h-4 text-blue-400" />
-                            ) : smtp.provider === 'domain_webmail' ? (
-                              <Globe className="w-4 h-4 text-teal-400" />
-                            ) : (
-                              <Server className="w-4 h-4 text-slate-300" />
-                            )}
+                            {smtp.provider === 'domain_webmail' ? <Globe className="w-4 h-4" /> : <Server className="w-4 h-4" />}
                           </div>
                           <div>
                             <h3 className="font-bold text-sm text-slate-100 leading-tight">{smtp.name}</h3>
