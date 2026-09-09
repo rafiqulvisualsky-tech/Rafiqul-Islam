@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
+import { safeParseResponse } from '../../lib/safeFetch';
 import { 
   Bot, 
   Send, 
@@ -307,7 +308,8 @@ Format with clean Markdown, clear sections, bullet points, and ready-to-use emai
         })
       });
 
-      const data = await response.json();
+      const parsed = await safeParseResponse(response, 'Failed to get AI assistant reply');
+      const data = parsed.data || {};
       const replyContent = data.reply || 'Here is the outreach strategy crafted for your campaign.';
       const usedTokens = data?.usage?.totalTokens || 240;
       const actualModelUsed = data?.modelUsed || selectedModel;

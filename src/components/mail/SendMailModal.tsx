@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp, DEFAULT_USER_SIGNATURE } from '../../context/AppContext';
+import { safeParseResponse } from '../../lib/safeFetch';
 import { 
   X, 
   Send, 
@@ -141,8 +142,9 @@ export const SendMailModal: React.FC<SendMailModalProps> = ({
         })
       });
 
-      const data = await res.json();
-      if (data.success && data.subject && data.body) {
+      const parsed = await safeParseResponse(res, 'Failed to generate outreach email');
+      const data = parsed.data || {};
+      if (parsed.ok && data.success && data.subject && data.body) {
         const tokensUsed = data.usage?.totalTokens || 140;
         deductAiTokens(tokensUsed);
         setSubject(data.subject);
@@ -180,8 +182,9 @@ export const SendMailModal: React.FC<SendMailModalProps> = ({
         })
       });
 
-      const data = await res.json();
-      if (data.success && data.optimizedBody) {
+      const parsed = await safeParseResponse(res, 'Failed to optimize email body');
+      const data = parsed.data || {};
+      if (parsed.ok && data.success && data.optimizedBody) {
         const tokensUsed = data.usage?.totalTokens || 115;
         deductAiTokens(tokensUsed);
         if (data.optimizedSubject) setSubject(data.optimizedSubject);

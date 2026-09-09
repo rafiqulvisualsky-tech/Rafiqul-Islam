@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
+import { safeParseResponse } from '../../lib/safeFetch';
 import { 
   ShieldCheck, 
   Lock, 
@@ -453,8 +454,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ email: cleanEmail, password })
             });
-            const data = await res.json();
-            if (data?.success && data.user) {
+            const parsed = await safeParseResponse(res, 'Verification failed');
+            const data = parsed.data;
+            if (parsed.ok && data?.success && data.user) {
               fallbackMatched = true;
               matchedUser = data.user;
             }

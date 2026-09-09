@@ -6,6 +6,57 @@
  * it returns a structured JSON object with the error message instead of throwing an unhandled exception.
  */
 
+// Install global Response.prototype.json safety guard immediately when this module loads
+if (typeof window !== 'undefined' && typeof Response !== 'undefined' && !(Response.prototype as any).__isSafeJsonGuarded) {
+  const originalJson = Response.prototype.json;
+  Response.prototype.json = async function () {
+    try {
+      // Clone response so original body stream can be read or reread safely
+      const clone = this.clone();
+      const rawText = await clone.text();
+
+      if (!rawText || !rawText.trim()) {
+        return { success: this.ok, status: this.status ? 'sent' : 'failed' };
+      }
+
+      try {
+        return JSON.parse(rawText);
+      } catch (parseErr) {
+        // Non-JSON response received (e.g., "A server error occurred. Please try again." or HTML)
+        let cleanMessage = rawText.trim();
+        if (cleanMessage.includes('<') && cleanMessage.includes('>')) {
+          const match = cleanMessage.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i) || cleanMessage.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+          if (match && match[1]) {
+            cleanMessage = match[1].replace(/<[^>]+>/g, '').trim();
+          } else {
+            cleanMessage = cleanMessage.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+          }
+        }
+        if (cleanMessage.length > 250) {
+          cleanMessage = cleanMessage.slice(0, 250) + '...';
+        }
+        return {
+          success: false,
+          error: cleanMessage || `Server returned invalid JSON response (HTTP ${this.status})`,
+          status: 'failed'
+        };
+      }
+    } catch {
+      // Fallback to original method if cloning/reading fails
+      try {
+        return await originalJson.call(this);
+      } catch {
+        return {
+          success: false,
+          error: 'Network read error on server response',
+          status: 'failed'
+        };
+      }
+    }
+  };
+  (Response.prototype as any).__isSafeJsonGuarded = true;
+}
+
 export interface SafeParsedResponse<T = any> {
   ok: boolean;
   status: number;

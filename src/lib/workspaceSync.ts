@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase';
+import { safeParseResponse } from './safeFetch';
 
 export interface WorkspaceData {
   leads?: any[];
@@ -118,11 +119,10 @@ export async function queryUserWorkspace(identifiers: {
       }
     });
 
-    if (res.ok) {
-      const json = await res.json();
-      if (json?.success && json?.data && typeof json.data === 'object') {
-        considerCandidate(json.data, 'backend-db');
-      }
+    const parsed = await safeParseResponse(res, 'Backend workspace fetch failed');
+    const json = parsed.data;
+    if (parsed.ok && json?.success && json?.data && typeof json.data === 'object') {
+      considerCandidate(json.data, 'backend-db');
     }
 
     // Secondary fallback: GET /api/user-data/:identifier
@@ -135,11 +135,10 @@ export async function queryUserWorkspace(identifiers: {
           'Expires': '0'
         }
       });
-      if (res2.ok) {
-        const json2 = await res2.json();
-        if (json2?.success && json2?.data && typeof json2.data === 'object') {
-          considerCandidate(json2.data, 'backend-db');
-        }
+      const parsed2 = await safeParseResponse(res2, 'Backend workspace fallback fetch failed');
+      const json2 = parsed2.data;
+      if (parsed2.ok && json2?.success && json2?.data && typeof json2.data === 'object') {
+        considerCandidate(json2.data, 'backend-db');
       }
     }
   } catch (err: any) {

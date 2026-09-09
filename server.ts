@@ -11,6 +11,15 @@ import crypto from 'crypto';
 
 dotenv.config();
 
+// Global crash protection for async SMTP/IMAP network and stream errors
+process.on('uncaughtException', (err) => {
+  console.error('[CRITICAL UNCAUGHT EXCEPTION PREVENTED]:', err?.message || err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[CRITICAL UNHANDLED REJECTION PREVENTED]:', (reason as any)?.message || reason);
+});
+
 const OTP_SECRET = process.env.OTP_SECRET || 'visualsky-secure-otp-signature-key-2026';
 
 const app = express();
@@ -1633,6 +1642,10 @@ app.post('/api/smtp/test', async (req, res) => {
           `[HINT] For Vercel/Cloud, switch to Port 465 (SSL) or use Resend/Brevo API (Port 443) for 100% guaranteed delivery.`
         ]
       });
+    } finally {
+      try {
+        transporter.close();
+      } catch {}
     }
 
     res.setHeader('Content-Type', 'application/json');
@@ -1919,6 +1932,10 @@ app.post('/api/smtp/send', async (req, res) => {
         code: sendErr?.code || 'SEND_FAIL',
         status: 'failed'
       });
+    } finally {
+      try {
+        transporter.close();
+      } catch {}
     }
   } catch (err: any) {
     console.error('Unhandled error in /api/smtp/send:', err);
@@ -1949,70 +1966,78 @@ app.post('/api/smtp/imap-sync', async (req, res) => {
     const imapPort = Number(port) || 993;
     const isSecure = encryption === 'SSL' || imapPort === 993;
 
-    const client = new ImapFlow({
-      host: imapHost,
-      port: imapPort,
-      secure: isSecure,
-      auth: {
-        user: username,
-        pass: password
-      },
-      logger: false,
-      tls: {
-        rejectUnauthorized: false
-      }
-    });
-
-    const connectPromise = client.connect();
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => {
-        const tErr: any = new Error(`IMAP connection to ${imapHost}:${imapPort} timed out.`);
-        tErr.code = 'ETIMEDOUT';
-        reject(tErr);
-      }, 15000);
-    });
-
-    await Promise.race([connectPromise, timeoutPromise]);
-
-    const lock = await client.getMailboxLock('INBOX');
-    const incomingMessages: any[] = [];
+    let client: ImapFlow | null = null;
 
     try {
-      const searchDate = new Date();
-      searchDate.setDate(searchDate.getDate() - (Number(sinceHours) ? Math.ceil(Number(sinceHours) / 24) : 7));
-
-      for await (const message of client.fetch({ since: searchDate }, { uid: true, envelope: true, source: true })) {
-        try {
-          if (message.source) {
-            const parsed = await simpleParser(message.source);
-            incomingMessages.push({
-              uid: message.uid,
-              messageId: parsed.messageId || message.envelope?.messageId,
-              from: parsed.from?.value?.[0]?.address || message.envelope?.from?.[0]?.address,
-              fromName: parsed.from?.value?.[0]?.name || message.envelope?.from?.[0]?.name || '',
-              to: parsed.to ? (Array.isArray(parsed.to) ? parsed.to.map((t: any) => t.value?.[0]?.address) : parsed.to.value?.[0]?.address) : username,
-              subject: parsed.subject || message.envelope?.subject || 'No Subject',
-              date: parsed.date || message.envelope?.date,
-              text: parsed.text || '',
-              html: parsed.html || parsed.textAsHtml || '',
-              inReplyTo: parsed.inReplyTo || message.envelope?.inReplyTo
-            });
-          }
-        } catch (msgErr) {
-          console.warn('Error parsing IMAP message:', msgErr);
+      client = new ImapFlow({
+        host: imapHost,
+        port: imapPort,
+        secure: isSecure,
+        auth: {
+          user: username,
+          pass: password
+        },
+        logger: false,
+        tls: {
+          rejectUnauthorized: false
         }
+      });
+
+      const connectPromise = client.connect();
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          const tErr: any = new Error(`IMAP connection to ${imapHost}:${imapPort} timed out.`);
+          tErr.code = 'ETIMEDOUT';
+          reject(tErr);
+        }, 15000);
+      });
+
+      await Promise.race([connectPromise, timeoutPromise]);
+
+      const lock = await client.getMailboxLock('INBOX');
+      const incomingMessages: any[] = [];
+
+      try {
+        const searchDate = new Date();
+        searchDate.setDate(searchDate.getDate() - (Number(sinceHours) ? Math.ceil(Number(sinceHours) / 24) : 7));
+
+        for await (const message of client.fetch({ since: searchDate }, { uid: true, envelope: true, source: true })) {
+          try {
+            if (message.source) {
+              const parsed = await simpleParser(message.source);
+              incomingMessages.push({
+                uid: message.uid,
+                messageId: parsed.messageId || message.envelope?.messageId,
+                from: parsed.from?.value?.[0]?.address || message.envelope?.from?.[0]?.address,
+                fromName: parsed.from?.value?.[0]?.name || message.envelope?.from?.[0]?.name || '',
+                to: parsed.to ? (Array.isArray(parsed.to) ? parsed.to.map((t: any) => t.value?.[0]?.address) : parsed.to.value?.[0]?.address) : username,
+                subject: parsed.subject || message.envelope?.subject || 'No Subject',
+                date: parsed.date || message.envelope?.date,
+                text: parsed.text || '',
+                html: parsed.html || parsed.textAsHtml || '',
+                inReplyTo: parsed.inReplyTo || message.envelope?.inReplyTo
+              });
+            }
+          } catch (msgErr) {
+            console.warn('Error parsing IMAP message:', msgErr);
+          }
+        }
+      } finally {
+        lock.release();
       }
+
+      return res.json({
+        success: true,
+        count: incomingMessages.length,
+        messages: incomingMessages
+      });
     } finally {
-      lock.release();
+      if (client) {
+        try {
+          await client.logout();
+        } catch {}
+      }
     }
-
-    await client.logout();
-
-    return res.json({
-      success: true,
-      count: incomingMessages.length,
-      messages: incomingMessages
-    });
   } catch (err: any) {
     console.error('IMAP sync failed:', err?.message);
     res.setHeader('Content-Type', 'application/json');

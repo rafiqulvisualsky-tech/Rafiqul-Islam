@@ -1021,9 +1021,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Sync all users and initial workspace on mount
   useEffect(() => {
     fetch('/api/users/registry')
-      .then(r => r.json())
-      .then(d => {
-        if (d.success && Array.isArray(d.users) && d.users.length > 0) {
+      .then(r => safeParseResponse(r, 'Failed to fetch registry'))
+      .then(parsed => {
+        const d = parsed.data || {};
+        if (parsed.ok && d.success && Array.isArray(d.users) && d.users.length > 0) {
           setAllUsers(prev => {
             const merged = [...prev];
             for (const u of d.users) {
@@ -1398,7 +1399,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: lead.website }),
       });
-      const data = await res.json();
+      const parsed = await safeParseResponse(res, 'Verification failed');
+      const data = parsed.data || {};
       setLeads(prev => prev.map(l => l.id === id ? { 
         ...l, 
         websiteStatus: data.isAlive ? 'alive' : 'dead',
@@ -1966,8 +1968,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const res = await fetch('/api/track/events');
         if (!res.ok) return;
-        const data = await res.json();
-        if (data.success && Array.isArray(data.events)) {
+        const parsed = await safeParseResponse(res, 'Tracking poll failed');
+        const data = parsed.data || {};
+        if (parsed.ok && data.success && Array.isArray(data.events)) {
           for (const ev of data.events) {
             const eventKey = `${ev.pixelId}_${ev.openedAt}`;
             if (processedOpensRef.current.has(eventKey)) continue;

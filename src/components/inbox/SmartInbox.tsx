@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { safeParseResponse } from '../../lib/safeFetch';
 import { EmailThread, EmailMessage } from '../../types';
 import { 
   Inbox, 
@@ -283,7 +284,8 @@ export const SmartInbox: React.FC = () => {
         })
       });
 
-      const data = await response.json();
+      const parsed = await safeParseResponse(response, 'Failed to generate AI reply');
+      const data = parsed.data || {};
       if (data.reply) {
         setReplyText(cleanBodyText(data.reply));
       }
@@ -312,8 +314,9 @@ export const SmartInbox: React.FC = () => {
         })
       });
 
-      const data = await response.json();
-      if (data.success && data.optimizedBody) {
+      const parsed = await safeParseResponse(response, 'Failed to polish reply');
+      const data = parsed.data || {};
+      if (parsed.ok && data.success && data.optimizedBody) {
         setReplyText(data.optimizedBody);
       }
       const usedTokens = data?.usage?.totalTokens || 95;
@@ -337,8 +340,9 @@ export const SmartInbox: React.FC = () => {
           senderName: currentUser.name || 'Outreach Specialist'
         })
       });
-      const data = await res.json();
-      if (data.success && data.subject && data.body) {
+      const parsed = await safeParseResponse(res, 'Failed to generate compose draft');
+      const data = parsed.data || {};
+      if (parsed.ok && data.success && data.subject && data.body) {
         setComposeSubject(data.subject);
         setComposeBody(data.body);
       }
