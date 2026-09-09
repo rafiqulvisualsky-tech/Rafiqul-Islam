@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Campaign, CampaignStep, Lead, SMTPAccount, EmailTemplate } from '../../types';
 import { SMTPConnectModal } from '../smtp/SMTPConnectModal';
+import { safeParseResponse } from '../../lib/safeFetch';
 import { 
   Send, 
   Plus, 
@@ -915,8 +916,9 @@ export const CampaignManager: React.FC = () => {
             trackingPixelId
           })
         });
-        const data = await res.json();
-        if (res.ok && data.success) {
+        const parsed = await safeParseResponse(res, 'SMTP relay connection failed');
+        const data = parsed.data || {};
+        if (parsed.ok && data.success) {
           isSentSuccess = true;
         } else {
           isSentSuccess = false;

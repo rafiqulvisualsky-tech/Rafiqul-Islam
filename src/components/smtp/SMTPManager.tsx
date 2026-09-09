@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp, getSMTPWarmupDetails } from '../../context/AppContext';
 import { SMTPAccount } from '../../types';
 import { SMTPConnectModal } from './SMTPConnectModal';
+import { safeParseResponse } from '../../lib/safeFetch';
 import { 
   Server, 
   Plus, 
@@ -74,9 +75,10 @@ export const SMTPManager: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(account)
       });
-      const data = await res.json();
+      const parsed = await safeParseResponse(res, 'SMTP handshake failed');
+      const data = parsed.data || {};
 
-      if (res.ok && data.success) {
+      if (parsed.ok && data.success) {
         updateSMTPAccount(account.id, { isConnected: true, healthScore: 99 });
         setTestLogs(data.logs || [
           `[DNS] MX, SPF, DKIM alignment OK for ${account.host}`,
@@ -87,8 +89,7 @@ export const SMTPManager: React.FC = () => {
         confetti({ particleCount: 30, spread: 60 });
       } else {
         updateSMTPAccount(account.id, { isConnected: false, healthScore: 0 });
-        setTestLogs(prev => [
-          ...prev,
+        setTestLogs(data.logs || [
           `[ERROR] Handshake failed: ${data.error || 'Check username and credentials'}`,
           `[HINT] Check port, SSL/TLS, and credentials.`
         ]);

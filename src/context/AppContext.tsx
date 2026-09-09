@@ -20,6 +20,7 @@ import confetti from 'canvas-confetti';
 import { audioEngine } from '../utils/audioPlayer';
 import { supabase, isSupabaseConfigured, signOutSupabase } from '../lib/supabase';
 import { queryUserWorkspace, persistUserWorkspace, WorkspaceData } from '../lib/workspaceSync';
+import { safeParseResponse } from '../lib/safeFetch';
 
 // Helper to calculate warm-up limits based on gradual +15/day ramp
 export const getSMTPWarmupDetails = (account: SMTPAccount) => {
@@ -204,7 +205,7 @@ interface AppContextType {
   setMinedLeads: React.Dispatch<React.SetStateAction<Lead[]>>;
   
   // Cross-Browser Cloud Workspace Sync
-  loadUserWorkspace: (userEmail: string, userId?: string) => Promise<boolean>;
+  loadUserWorkspace: (userEmail?: string, userId?: string, seedWorkspaceData?: any) => Promise<boolean>;
   saveWorkspaceToDatabase: () => Promise<boolean>;
   persistResourceDirectly: (resource: string, items: any[]) => Promise<void>;
   isWorkspaceLoading: boolean;
@@ -900,7 +901,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Load user workspace from database (Cross-Device & Cross-Browser Persistence)
-  const loadUserWorkspace = async (userEmail?: string, userId?: string): Promise<boolean> => {
+  const loadUserWorkspace = async (userEmail?: string, userId?: string, seedWorkspaceData?: any): Promise<boolean> => {
     const cleanEmail = (userEmail || currentUser?.email || '').trim().toLowerCase();
     const cleanUserId = (userId || currentUser?.id || currentUser?.supabaseId || '').trim();
     if (!cleanEmail && !cleanUserId) return false;
@@ -910,7 +911,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     isHydratingRef.current = true;
 
     try {
-      const result = await queryUserWorkspace({ userId: cleanUserId, email: cleanEmail });
+      let result = await queryUserWorkspace({ userId: cleanUserId, email: cleanEmail });
+      
+      // If no remote record but seed data was passed (e.g. from user_metadata)
+      if ((!result.success || !result.data) && seedWorkspaceData && typeof seedWorkspaceData === 'object') {
+        result = { success: true, data: seedWorkspaceData, source: 'supabase-auth' };
+      }
+
       if (result.success && result.data && typeof result.data === 'object') {
         const data = result.data;
         // Central database is the single source of truth - hydrate all workspace state
@@ -1818,8 +1825,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(smtp),
       });
-      const data = await res.json();
-      const isSuccess = Boolean(res.ok && data.success);
+      const parsed = await safeParseResponse(res, 'SMTP handshake failed');
+      const data = parsed.data || {};
+      const isSuccess = Boolean(parsed.ok && data.success);
 
       const updatedSmtp = smtpAccounts.map(s => s.id === id ? {
         ...s,
@@ -2058,8 +2066,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         })
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
+      const parsed = await safeParseResponse(res, 'Failed to sync with IMAP server');
+      const data = parsed.data || {};
+      if (!parsed.ok || !data.success) {
         throw new Error(data.error || 'Failed to sync with IMAP server');
       }
 
@@ -2300,8 +2309,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         })
       });
 
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const parsed = await safeParseResponse(res, 'SMTP relay connection failed');
+      const data = parsed.data || {};
+      if (parsed.ok && data.success) {
         isSuccess = true;
       } else {
         isSuccess = false;

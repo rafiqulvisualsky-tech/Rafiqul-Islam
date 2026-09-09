@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { SMTPAccount } from '../../types';
+import { safeParseResponse } from '../../lib/safeFetch';
 import { 
   Server, 
   X, 
@@ -220,9 +221,10 @@ export const SMTPConnectModal: React.FC<SMTPConnectModalProps> = ({
           domainWebmailUrl
         })
       });
-      const data = await res.json();
+      const parsed = await safeParseResponse(res, 'SMTP handshake failed');
+      const data = parsed.data || {};
 
-      if (data.success) {
+      if (parsed.ok && data.success) {
         setTestSuccess(true);
         setTestLogs(data.logs || [
           `[DNS] MX records verified for ${host}`,
@@ -234,8 +236,7 @@ export const SMTPConnectModal: React.FC<SMTPConnectModalProps> = ({
         confetti({ particleCount: 40, spread: 60, origin: { y: 0.7 } });
       } else {
         setTestSuccess(false);
-        setTestLogs(prev => [
-          ...prev,
+        setTestLogs(data.logs || [
           `[ERROR] Handshake failed: ${data.error || 'Connection timeout or invalid credentials'}`,
           `[HINT] Verify SMTP Host, Port, Username, and Password.`
         ]);
@@ -277,8 +278,9 @@ export const SMTPConnectModal: React.FC<SMTPConnectModalProps> = ({
           }
         })
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const parsed = await safeParseResponse(res, 'Failed to dispatch test email');
+      const data = parsed.data || {};
+      if (parsed.ok && data.success) {
         setTestSendSuccess(true);
         confetti({ particleCount: 50, spread: 70 });
       } else {

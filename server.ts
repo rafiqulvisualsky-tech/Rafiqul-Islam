@@ -18,6 +18,19 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '15mb' }));
 
+// Prevent raw HTML SyntaxErrors from broken or malformed client JSON
+app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err instanceof SyntaxError && 'body' in err) {
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(400).json({
+      success: false,
+      error: 'Malformed JSON payload in request body.',
+      status: 'failed'
+    });
+  }
+  next(err);
+});
+
 // Ensure server data directory exists for multi-browser account persistence
 const DATA_DIR = path.join(process.cwd(), '.data');
 if (!fs.existsSync(DATA_DIR)) {
@@ -1529,6 +1542,7 @@ app.post('/api/smtp/test', async (req, res) => {
 
     // 3. Standard SMTP Socket Connection (Gmail, cPanel, Webmail, etc.)
     if (!username || !host) {
+      res.setHeader('Content-Type', 'application/json');
       return res.status(400).json({ 
         success: false, 
         error: 'SMTP Host and Username / Email are required' 
@@ -1536,6 +1550,7 @@ app.post('/api/smtp/test', async (req, res) => {
     }
 
     if (!authKey) {
+      res.setHeader('Content-Type', 'application/json');
       return res.status(400).json({ 
         success: false, 
         error: 'SMTP Password or App Password is required for live delivery' 
@@ -1554,17 +1569,27 @@ app.post('/api/smtp/test', async (req, res) => {
         user: username,
         pass: authKey
       },
-      connectionTimeout: 12000,
-      greetingTimeout: 12000,
-      socketTimeout: 15000,
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 10000,
       tls: {
         rejectUnauthorized: false
       }
     });
 
     try {
-      const verified = await transporter.verify();
+      const verifyPromise = transporter.verify();
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          const timeoutErr: any = new Error(`SMTP connection timed out after 14s while connecting to ${host}:${smtpPort}.`);
+          timeoutErr.code = 'ETIMEDOUT';
+          reject(timeoutErr);
+        }, 14000);
+      });
+
+      const verified = await Promise.race([verifyPromise, timeoutPromise]);
       if (verified) {
+        res.setHeader('Content-Type', 'application/json');
         return res.json({
           success: true,
           provider: provider || 'Custom SMTP Relay',
@@ -1585,31 +1610,47 @@ app.post('/api/smtp/test', async (req, res) => {
       }
     } catch (verifyErr: any) {
       console.warn('SMTP verification handshake failed:', verifyErr?.message);
+      let friendlyError = verifyErr?.message || 'Invalid credentials or port rejected';
+      if (verifyErr?.code === 'EAUTH' || friendlyError.includes('535') || friendlyError.toLowerCase().includes('auth')) {
+        friendlyError = `Authentication failed: Remote SMTP server rejected username "${username}" or password.`;
+      } else if (verifyErr?.code === 'ETIMEDOUT' || verifyErr?.code === 'ESOCKET') {
+        friendlyError = `Connection timed out: Server at ${host}:${smtpPort} did not respond. Check host/port or try Port 465 SSL.`;
+      } else if (verifyErr?.code === 'EDNS' || verifyErr?.code === 'ENOTFOUND') {
+        friendlyError = `Host resolution error: DNS could not find ${host}.`;
+      } else if (verifyErr?.code === 'ECONNREFUSED') {
+        friendlyError = `Connection refused by remote host ${host}:${smtpPort}.`;
+      }
+
+      res.setHeader('Content-Type', 'application/json');
       return res.status(400).json({
         success: false,
-        error: `SMTP Connection Failed: ${verifyErr?.message || 'Invalid credentials or port rejected'}`,
+        error: `SMTP Connection Failed: ${friendlyError}`,
         code: verifyErr?.code || 'AUTH_FAIL',
         logs: [
           `[DNS] Target host: ${host}:${smtpPort}`,
           `[SOCKET] Attempting TCP handshake...`,
-          `[ERROR] Server response: ${verifyErr?.message}`,
+          `[ERROR] Server response: ${friendlyError}`,
           `[HINT] For Vercel/Cloud, switch to Port 465 (SSL) or use Resend/Brevo API (Port 443) for 100% guaranteed delivery.`
         ]
       });
     }
 
+    res.setHeader('Content-Type', 'application/json');
     return res.status(400).json({
       success: false,
       error: 'SMTP Server did not acknowledge verification handshake.',
       logs: [`[ERROR] Verification timed out on ${host}:${smtpPort}`]
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err?.message || 'SMTP connection failed' });
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(500).json({ success: false, error: err?.message || 'SMTP connection failed' });
   }
 });
 
 // Endpoint: Send Real Outbound Email via Direct HTTPS API or Nodemailer SMTP
 app.post('/api/smtp/send', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+
   try {
     const {
       to,
@@ -1709,7 +1750,14 @@ app.post('/api/smtp/send', async (req, res) => {
           })
         });
 
-        const resendData = await resendRes.json();
+        let resendData: any = {};
+        try {
+          const rawText = await resendRes.text();
+          resendData = rawText ? JSON.parse(rawText) : {};
+        } catch {
+          resendData = { message: `Resend API returned status ${resendRes.status}` };
+        }
+
         if (resendRes.ok && resendData.id) {
           return res.json({
             success: true,
@@ -1720,9 +1768,9 @@ app.post('/api/smtp/send', async (req, res) => {
             relay: 'Resend HTTPS API (Port 443)'
           });
         } else {
-          return res.status(400).json({
+          return res.status(resendRes.status >= 400 && resendRes.status < 500 ? resendRes.status : 400).json({
             success: false,
-            error: `Resend API Dispatch Error: ${resendData.message || 'Failed to dispatch email'}`,
+            error: `Resend API Dispatch Error: ${resendData.message || resendData.error || 'Failed to dispatch email'}`,
             status: 'failed'
           });
         }
@@ -1757,7 +1805,14 @@ app.post('/api/smtp/send', async (req, res) => {
           })
         });
 
-        const brevoData = await brevoRes.json();
+        let brevoData: any = {};
+        try {
+          const rawText = await brevoRes.text();
+          brevoData = rawText ? JSON.parse(rawText) : {};
+        } catch {
+          brevoData = { message: `Brevo API returned status ${brevoRes.status}` };
+        }
+
         if (brevoRes.ok && brevoData.messageId) {
           return res.json({
             success: true,
@@ -1768,9 +1823,9 @@ app.post('/api/smtp/send', async (req, res) => {
             relay: 'Brevo HTTPS API (Port 443)'
           });
         } else {
-          return res.status(400).json({
+          return res.status(brevoRes.status >= 400 && brevoRes.status < 500 ? brevoRes.status : 400).json({
             success: false,
-            error: `Brevo API Dispatch Error: ${brevoData.message || 'Transmission failed'}`,
+            error: `Brevo API Dispatch Error: ${brevoData.message || brevoData.error || 'Transmission failed'}`,
             status: 'failed'
           });
         }
@@ -1784,6 +1839,14 @@ app.post('/api/smtp/send', async (req, res) => {
     }
 
     // 3. Nodemailer SMTP Socket Relay (Port 465 / 587)
+    if (!activeSmtp.host) {
+      return res.status(400).json({
+        success: false,
+        error: 'SMTP host is missing. Please configure a valid SMTP hostname (e.g., mail.yourdomain.com or smtp.gmail.com).',
+        status: 'failed'
+      });
+    }
+
     const port = Number(activeSmtp.port) || 465;
     const isSecure = activeSmtp.encryption === 'SSL' || port === 465;
 
@@ -1796,9 +1859,9 @@ app.post('/api/smtp/send', async (req, res) => {
         user: activeSmtp.username,
         pass: authKey
       },
-      connectionTimeout: 15000,
-      greetingTimeout: 15000,
-      socketTimeout: 20000,
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 12000,
       tls: {
         rejectUnauthorized: false
       }
@@ -1818,7 +1881,16 @@ app.post('/api/smtp/send', async (req, res) => {
     };
 
     try {
-      const info = await transporter.sendMail(mailOptions);
+      const sendPromise = transporter.sendMail(mailOptions);
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          const timeoutErr: any = new Error(`SMTP connection timed out after 18s while connecting to ${activeSmtp.host}:${port}.`);
+          timeoutErr.code = 'ETIMEDOUT';
+          reject(timeoutErr);
+        }, 18000);
+      });
+
+      const info: any = await Promise.race([sendPromise, timeoutPromise]);
       return res.json({
         success: true,
         messageId: info.messageId,
@@ -1830,20 +1902,39 @@ app.post('/api/smtp/send', async (req, res) => {
       });
     } catch (sendErr: any) {
       console.error('SMTP transmission failure on live send:', sendErr?.message);
-      return res.status(500).json({
+      let friendlyError = sendErr?.message || 'Transmission rejected by remote SMTP server';
+      if (sendErr?.code === 'EAUTH' || friendlyError.includes('535') || friendlyError.toLowerCase().includes('auth')) {
+        friendlyError = `Authentication failed: Remote SMTP server rejected username "${activeSmtp.username}" or password. Please check your credentials.`;
+      } else if (sendErr?.code === 'ETIMEDOUT' || sendErr?.code === 'ESOCKET') {
+        friendlyError = `Connection timed out: Server at ${activeSmtp.host}:${port} did not respond within 18 seconds. (Tip: Try Port 465 SSL or Resend/Brevo API)`;
+      } else if (sendErr?.code === 'EDNS' || sendErr?.code === 'ENOTFOUND') {
+        friendlyError = `Host resolution error: DNS could not find ${activeSmtp.host}.`;
+      } else if (sendErr?.code === 'ECONNREFUSED') {
+        friendlyError = `Connection refused by remote host ${activeSmtp.host}:${port}.`;
+      }
+
+      return res.status(400).json({
         success: false,
-        error: `SMTP Relay Error: ${sendErr?.message || 'Transmission rejected by remote SMTP server'}. (Tip: Use Port 465 SSL or Resend/Brevo HTTPS API for 100% Vercel compatibility)`,
+        error: `SMTP Relay Error: ${friendlyError}`,
         code: sendErr?.code || 'SEND_FAIL',
         status: 'failed'
       });
     }
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err?.message || 'Email delivery failed', status: 'failed' });
+    console.error('Unhandled error in /api/smtp/send:', err);
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(500).json({
+      success: false,
+      error: err?.message || 'Email delivery failed due to an unexpected server error',
+      status: 'failed'
+    });
   }
 });
 
 // Endpoint: Live IMAP Reply Synchronization from Mailbox
 app.post('/api/smtp/imap-sync', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+
   try {
     const { host, port, username, password, encryption, sinceHours } = req.body;
     if (!host || !username || !password) {
@@ -1872,7 +1963,16 @@ app.post('/api/smtp/imap-sync', async (req, res) => {
       }
     });
 
-    await client.connect();
+    const connectPromise = client.connect();
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        const tErr: any = new Error(`IMAP connection to ${imapHost}:${imapPort} timed out.`);
+        tErr.code = 'ETIMEDOUT';
+        reject(tErr);
+      }, 15000);
+    });
+
+    await Promise.race([connectPromise, timeoutPromise]);
 
     const lock = await client.getMailboxLock('INBOX');
     const incomingMessages: any[] = [];
@@ -1915,7 +2015,8 @@ app.post('/api/smtp/imap-sync', async (req, res) => {
     });
   } catch (err: any) {
     console.error('IMAP sync failed:', err?.message);
-    return res.status(500).json({
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(400).json({
       success: false,
       error: `IMAP Connection Error: ${err?.message || 'Failed to authenticate with IMAP server'}`
     });
@@ -1926,6 +2027,20 @@ app.post('/api/smtp/imap-sync', async (req, res) => {
 app.all('/api/*', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   return res.status(404).json({ success: false, error: `API endpoint ${req.method} ${req.path} not found` });
+});
+
+// Global API error handler ensuring structured JSON is always returned instead of raw text/HTML
+app.use('/api', (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error(`[API Error Catch-all] ${req.method} ${req.originalUrl}:`, err?.message || err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.setHeader('Content-Type', 'application/json');
+  return res.status(err?.status || 500).json({
+    success: false,
+    error: err?.message || 'A server error occurred while processing the request.',
+    status: 'failed'
+  });
 });
 
 // Vite / Production handler

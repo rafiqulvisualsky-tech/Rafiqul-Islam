@@ -212,7 +212,7 @@ export const SendMailModal: React.FC<SendMailModalProps> = ({
     setIsSending(true);
 
     // Call real direct email dispatcher
-    await sendDirectEmail({
+    const sendSuccess = await sendDirectEmail({
       recipientEmail,
       recipientName,
       senderSmtpId: selectedSmtpId || smtpAccounts[0]?.id || '',
@@ -222,19 +222,16 @@ export const SendMailModal: React.FC<SendMailModalProps> = ({
     });
 
     setIsSending(false);
-    setIsSuccess(true);
 
-    addNotification({
-      title: sendMode === 'instant' ? 'Outbound Email Dispatched 🚀' : 'Email Scheduled Successfully ⏰',
-      message: `${sendMode === 'instant' ? 'Sent' : 'Scheduled'} outbound email to ${recipientName || recipientEmail} via 100% Primary Inbox Engine.`,
-      type: 'reply'
-    });
+    if (sendSuccess) {
+      setIsSuccess(true);
 
-    setTimeout(() => {
-      setIsSuccess(false);
-      clearDraft();
-      onClose();
-    }, 1200);
+      setTimeout(() => {
+        setIsSuccess(false);
+        clearDraft();
+        onClose();
+      }, 1200);
+    }
   };
 
   if (!isOpen) return null;

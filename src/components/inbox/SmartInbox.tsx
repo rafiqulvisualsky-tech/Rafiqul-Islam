@@ -1037,24 +1037,21 @@ export const SmartInbox: React.FC = () => {
                 type="button"
                 onClick={async () => {
                   if (!composeTo || !composeSubject || !composeBody) return;
-                  await sendDirectEmail({
+                  const sendSuccess = await sendDirectEmail({
                     recipientEmail: composeTo,
                     recipientName: composeName || composeTo,
                     senderSmtpId: composeSmtpId || smtpAccounts[0]?.id || '',
                     subject: composeSubject,
                     body: composeBody,
                   });
-                  setShowComposeModal(false);
-                  setComposeTo('');
-                  setComposeName('');
-                  setComposeSubject('');
-                  setComposeBody('');
-                  confetti({ particleCount: 40, spread: 65 });
-                  addNotification({
-                    title: 'Outbound Dispatched 🚀',
-                    message: `Sent email to ${composeName || composeTo} via ${smtpAccounts.find(s => s.id === composeSmtpId)?.name || 'SMTP'}`,
-                    type: 'reply'
-                  });
+                  if (sendSuccess) {
+                    setShowComposeModal(false);
+                    setComposeTo('');
+                    setComposeName('');
+                    setComposeSubject('');
+                    setComposeBody('');
+                    confetti({ particleCount: 40, spread: 65 });
+                  }
                 }}
                 disabled={!composeTo || !composeSubject || !composeBody}
                 className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-blue-500/25 cursor-pointer disabled:opacity-40"
