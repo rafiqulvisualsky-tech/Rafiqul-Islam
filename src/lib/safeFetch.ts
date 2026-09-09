@@ -35,6 +35,11 @@ if (typeof window !== 'undefined' && typeof Response !== 'undefined' && !(Respon
         if (cleanMessage.length > 250) {
           cleanMessage = cleanMessage.slice(0, 250) + '...';
         }
+
+        if (cleanMessage.includes('FUNCTION_INVOCATION_FAILED') || cleanMessage.includes('A server error has occurred FUNCTION_INVOCATION')) {
+          cleanMessage = 'Serverless Connection Timeout: The remote SMTP server did not complete the connection handshake within the cloud time limit. Your hosting firewall may be blocking cloud IPs. Tip: Switch to Port 587 (TLS) or use Resend/Brevo API.';
+        }
+
         return {
           success: false,
           error: cleanMessage || `Server returned invalid JSON response (HTTP ${this.status})`,
@@ -133,6 +138,10 @@ export async function safeParseResponse<T = any>(
     // Limit length to avoid massive HTML dumps
     if (cleanMessage.length > 250) {
       cleanMessage = cleanMessage.slice(0, 250) + '...';
+    }
+
+    if (cleanMessage.includes('FUNCTION_INVOCATION_FAILED') || cleanMessage.includes('A server error has occurred FUNCTION_INVOCATION')) {
+      cleanMessage = 'Serverless Connection Timeout: The remote SMTP server did not complete the connection handshake within the cloud time limit. Your hosting firewall may be blocking cloud IPs. Tip: Switch to Port 587 (TLS) or use Resend/Brevo API.';
     }
 
     if (!cleanMessage) {

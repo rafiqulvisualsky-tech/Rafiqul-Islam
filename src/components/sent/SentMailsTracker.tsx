@@ -28,9 +28,11 @@ import {
   Sparkles,
   Inbox,
   LayoutGrid,
-  List
+  List,
+  RotateCw
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { safeParseResponse } from '../../lib/safeFetch';
 
 interface SentMailsTrackerProps {
   onOpenSendMail?: (lead?: any) => void;
@@ -39,11 +41,13 @@ interface SentMailsTrackerProps {
 export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMail }) => {
   const { 
     sentEmails, 
+    setSentEmails,
     clearSentEmails, 
     deleteSentEmail,
     customSimulateReply, 
     setActiveTab,
     leads,
+    smtpAccounts,
     addNotification
   } = useApp();
 
@@ -53,6 +57,72 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
   const [selectedMail, setSelectedMail] = useState<SentEmailLog | null>(null);
   const [isCopiedId, setIsCopiedId] = useState<string | null>(null);
   const [isSimulatingPing, setIsSimulatingPing] = useState<boolean>(false);
+  const [isRetrying, setIsRetrying] = useState<boolean>(false);
+
+  const handleRetrySend = async (mail: SentEmailLog) => {
+    setIsRetrying(true);
+    try {
+      const activeAccount = smtpAccounts.find(a => a.name === mail.smtpAccountName || mail.smtpHost.includes(a.host)) ||
+                            smtpAccounts.find(a => a.status === 'connected') ||
+                            smtpAccounts[0];
+
+      if (!activeAccount) {
+        addNotification({
+          title: 'No SMTP Account Configured',
+          message: 'Please connect an active SMTP account in Settings -> SMTP Accounts.',
+          type: 'system'
+        });
+        setIsRetrying(false);
+        return;
+      }
+
+      const res = await fetch('/api/smtp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: mail.recipientEmail,
+          toName: mail.recipientName,
+          from: activeAccount.fromEmail || activeAccount.username,
+          fromName: activeAccount.fromName || 'Visual Sky Outreach',
+          subject: mail.subject,
+          text: mail.body,
+          smtpConfig: activeAccount,
+          trackingPixelId: mail.trackingPixelId
+        })
+      });
+
+      const parsed = await safeParseResponse(res, 'SMTP transmission failed');
+      const data = parsed.data || {};
+
+      if (parsed.ok && data.success) {
+        setSentEmails(prev => prev.map(m => m.id === mail.id ? { ...m, status: 'sent', errorMessage: undefined } : m));
+        setSelectedMail(prev => prev && prev.id === mail.id ? { ...prev, status: 'sent', errorMessage: undefined } : prev);
+        addNotification({
+          title: 'Email Dispatched Successfully! 🚀',
+          message: `Live email delivered to ${mail.recipientEmail} via ${activeAccount.name}.`,
+          type: 'reply'
+        });
+      } else {
+        const errText = data.error || 'Server rejected transmission';
+        setSentEmails(prev => prev.map(m => m.id === mail.id ? { ...m, errorMessage: errText } : m));
+        setSelectedMail(prev => prev && prev.id === mail.id ? { ...prev, errorMessage: errText } : prev);
+        addNotification({
+          title: 'Transmission Failed',
+          message: errText,
+          type: 'system'
+        });
+      }
+    } catch (err: any) {
+      const errText = err?.message || 'Network error during retry';
+      addNotification({
+        title: 'Retry Error',
+        message: errText,
+        type: 'system'
+      });
+    } finally {
+      setIsRetrying(false);
+    }
+  };
 
   // Filtered List (Exclude trashed)
   const activeSentEmails = useMemo(() => sentEmails.filter(s => !s.isTrash), [sentEmails]);
@@ -583,7 +653,7 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
 
             {/* Error message banner if failed */}
             {selectedMail.status === 'failed' && selectedMail.errorMessage && (
-              <div className="p-3 bg-rose-950/60 border border-rose-900 rounded-2xl space-y-1">
+              <div className="p-3.5 bg-rose-950/60 border border-rose-900 rounded-2xl space-y-2">
                 <div className="text-[11px] font-bold text-rose-300 flex items-center gap-1.5">
                   <X className="w-3.5 h-3.5 text-rose-400" />
                   <span>SMTP Delivery Failure Reason</span>
@@ -591,6 +661,31 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
                 <p className="text-xs text-rose-200 font-mono break-words leading-relaxed">
                   {selectedMail.errorMessage}
                 </p>
+
+                {/* Cloud & Serverless Guidance */}
+                {(selectedMail.errorMessage.includes('FUNCTION_INVOCATION_FAILED') ||
+                  selectedMail.errorMessage.includes('timeout') ||
+                  selectedMail.errorMessage.includes('Serverless') ||
+                  selectedMail.errorMessage.includes('timed out') ||
+                  selectedMail.errorMessage.includes('ETIMEDOUT')) && (
+                  <div className="bg-slate-900/90 border border-amber-500/30 rounded-xl p-3 text-[11px] text-amber-200/90 space-y-1.5">
+                    <div className="font-bold flex items-center gap-1.5 text-amber-400">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Cloud SMTP Delivery Diagnostics & Recommendations:</span>
+                    </div>
+                    <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px]">
+                      <li>
+                        <strong>Switch Port:</strong> Try Port <strong>587 (TLS/STARTTLS)</strong> instead of Port 465 (SSL) in Settings → SMTP Accounts.
+                      </li>
+                      <li>
+                        <strong>Hosting Firewall:</strong> cPanel / custom mail hosts often block connections from cloud datacenters (AWS/Vercel). Whitelist serverless IP ranges or contact your host.
+                      </li>
+                      <li>
+                        <strong>Guaranteed Delivery:</strong> Connect via <strong>Resend</strong> or <strong>Brevo API</strong> (HTTPS Port 443) which never faces firewall or socket blocks.
+                      </li>
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
 
@@ -605,6 +700,17 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
             {/* Actions */}
             <div className="flex items-center justify-between pt-3 border-t border-slate-800">
               <div className="flex items-center gap-2">
+                {selectedMail.status === 'failed' && (
+                  <button
+                    disabled={isRetrying}
+                    onClick={() => handleRetrySend(selectedMail)}
+                    className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-lg shadow-amber-900/30 transition"
+                  >
+                    <RotateCw className={`w-3.5 h-3.5 ${isRetrying ? 'animate-spin' : ''}`} />
+                    <span>{isRetrying ? 'Dispatching...' : 'Retry Dispatch'}</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => handleSimulateOpen(selectedMail)}
                   className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1 cursor-pointer"
@@ -640,7 +746,7 @@ export const SentMailsTracker: React.FC<SentMailsTrackerProps> = ({ onOpenSendMa
 
                 <button
                   onClick={() => setSelectedMail(null)}
-                  className="px-4 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold"
+                  className="px-4 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold cursor-pointer"
                 >
                   Done
                 </button>

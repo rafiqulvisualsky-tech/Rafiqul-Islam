@@ -1,5 +1,4 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
@@ -40,8 +39,8 @@ app.use((err: any, _req: express.Request, res: express.Response, next: express.N
   next(err);
 });
 
-// Ensure server data directory exists for multi-browser account persistence
-const DATA_DIR = path.join(process.cwd(), '.data');
+// Ensure server data directory exists for multi-browser account persistence (using /tmp on Vercel read-only system)
+const DATA_DIR = process.env.VERCEL ? path.join('/tmp', '.data') : path.join(process.cwd(), '.data');
 if (!fs.existsSync(DATA_DIR)) {
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -1897,10 +1896,10 @@ app.post('/api/smtp/send', async (req, res) => {
       const sendPromise = transporter.sendMail(mailOptions);
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => {
-          const timeoutErr: any = new Error(`SMTP connection timed out after 18s while connecting to ${activeSmtp.host}:${port}.`);
+          const timeoutErr: any = new Error(`Connection timed out after 8s while connecting to ${activeSmtp.host}:${port}. Cloud serverless environments may block or face firewall drops on port ${port}.`);
           timeoutErr.code = 'ETIMEDOUT';
           reject(timeoutErr);
-        }, 18000);
+        }, 8000);
       });
 
       const info: any = await Promise.race([sendPromise, timeoutPromise]);
@@ -1918,8 +1917,8 @@ app.post('/api/smtp/send', async (req, res) => {
       let friendlyError = sendErr?.message || 'Transmission rejected by remote SMTP server';
       if (sendErr?.code === 'EAUTH' || friendlyError.includes('535') || friendlyError.toLowerCase().includes('auth')) {
         friendlyError = `Authentication failed: Remote SMTP server rejected username "${activeSmtp.username}" or password. Please check your credentials.`;
-      } else if (sendErr?.code === 'ETIMEDOUT' || sendErr?.code === 'ESOCKET') {
-        friendlyError = `Connection timed out: Server at ${activeSmtp.host}:${port} did not respond within 18 seconds. (Tip: Try Port 465 SSL or Resend/Brevo API)`;
+      } else if (sendErr?.code === 'ETIMEDOUT' || sendErr?.code === 'ESOCKET' || friendlyError.includes('timed out')) {
+        friendlyError = `Connection timed out: Server at ${activeSmtp.host}:${port} did not respond within 8 seconds. Cloud serverless IPs may be blocked by your hosting firewall. Tip: Try Port 587 (TLS), check cPanel firewall whitelist, or use Resend/Brevo API.`;
       } else if (sendErr?.code === 'EDNS' || sendErr?.code === 'ENOTFOUND') {
         friendlyError = `Host resolution error: DNS could not find ${activeSmtp.host}.`;
       } else if (sendErr?.code === 'ECONNREFUSED') {
@@ -2071,6 +2070,7 @@ app.use('/api', (err: any, req: express.Request, res: express.Response, next: ex
 // Vite / Production handler
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
