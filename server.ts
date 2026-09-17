@@ -546,6 +546,342 @@ function smartMergeWorkspaces(existing: any, incoming: any): any {
     },
     userId: inc.userId || e.userId,
     email: inc.email || e.email,
+    lastActiveTab: inc.lastActiveTab || e.lastActiveTab || 'dashboard',
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function getDefaultWorkspaceForUser(email: string, userId?: string): any {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanUserId = (userId || 'user-agency-1').trim();
+
+  const defaultTags = [
+    { id: 'tag-saas', name: 'B2B SaaS Founders', color: 'cyan', description: 'Tech founders and software leaders', createdAt: '2026-09-01' },
+    { id: 'tag-vip', name: 'VIP Decision Makers', color: 'emerald', description: 'C-Level & VP Outreach targets', createdAt: '2026-09-01' },
+    { id: 'tag-followup', name: '7-Day Follow Up', color: 'amber', description: 'Active sequence follow-ups', createdAt: '2026-09-01' },
+    { id: 'tag-partners', name: 'Agency Partners', color: 'purple', description: 'Strategic growth partners', createdAt: '2026-09-01' }
+  ];
+
+  const defaultLeads = [
+    {
+      id: 'lead-saas-101',
+      name: 'Sarah Jenkins',
+      title: 'Chief Executive Officer',
+      company: 'CloudScale Technologies',
+      email: 's.jenkins@cloudscaletech.io',
+      phone: '+1 (415) 890-2134',
+      website: 'https://cloudscaletech.io',
+      niche: 'B2B SaaS & Cloud Infrastructure',
+      location: 'San Francisco, CA, USA',
+      source: 'AI Miner Engine',
+      companySize: '51-200 employees',
+      leadScore: 96,
+      icebreaker: 'Loved your recent feature on multi-cloud latency optimization.',
+      socials: { linkedin: 'https://linkedin.com/in/sarah-jenkins-cloud', twitter: 'https://x.com/sarah_cloudtech' },
+      status: 'new',
+      websiteStatus: 'alive',
+      responseTimeMs: 64,
+      lastActivityDate: new Date().toISOString(),
+      daysAgo: 1,
+      sentCampaigns: ['camp-b2b-saas-growth'],
+      customNotes: 'Interested in automating outbound cold deliverability.',
+      tags: ['B2B SaaS Founders', 'VIP Decision Makers'],
+      openCount: 2,
+      lastOpenedAt: new Date(Date.now() - 3600000 * 4).toISOString(),
+      isReplied: false,
+      isTrash: false
+    },
+    {
+      id: 'lead-saas-102',
+      name: 'Alex Vance',
+      title: 'VP of Growth & Sales',
+      company: 'HyperFlow Dynamics',
+      email: 'alex.vance@hyperflowhq.com',
+      phone: '+1 (206) 431-7789',
+      website: 'https://hyperflowhq.com',
+      niche: 'B2B SaaS & Tech',
+      location: 'Seattle, WA, USA',
+      source: 'Verified Prospector',
+      companySize: '11-50 employees',
+      leadScore: 91,
+      icebreaker: 'Noticed HyperFlow just crossed the 10k MRR milestone on IndieHackers.',
+      socials: { linkedin: 'https://linkedin.com/in/alex-vance-hyper' },
+      status: 'opened',
+      websiteStatus: 'alive',
+      responseTimeMs: 78,
+      lastActivityDate: new Date().toISOString(),
+      daysAgo: 2,
+      sentCampaigns: ['camp-b2b-saas-growth'],
+      customNotes: 'Requested benchmark stats on inbox placement.',
+      tags: ['B2B SaaS Founders', '7-Day Follow Up'],
+      openCount: 3,
+      lastOpenedAt: new Date(Date.now() - 3600000 * 12).toISOString(),
+      isReplied: false,
+      isTrash: false
+    },
+    {
+      id: 'lead-saas-103',
+      name: 'Liam Chen',
+      title: 'Managing Director',
+      company: 'Nexus Scale Labs',
+      email: 'liam@nexuslabs.co',
+      phone: '+1 (650) 902-3341',
+      website: 'https://nexuslabs.co',
+      niche: 'AI & Enterprise Automation',
+      location: 'Palo Alto, CA, USA',
+      source: 'AI Miner Engine',
+      companySize: '21-50 employees',
+      leadScore: 94,
+      icebreaker: 'Impressive release of the Autonomous Pipeline generator last week.',
+      socials: { linkedin: 'https://linkedin.com/in/liamchen-ai' },
+      status: 'replied',
+      websiteStatus: 'alive',
+      responseTimeMs: 52,
+      lastActivityDate: new Date().toISOString(),
+      daysAgo: 3,
+      sentCampaigns: ['camp-enterprise-partners'],
+      customNotes: 'Replied positively: "Let us schedule a quick call this Thursday."',
+      tags: ['VIP Decision Makers', 'Agency Partners'],
+      openCount: 4,
+      lastOpenedAt: new Date(Date.now() - 3600000 * 24).toISOString(),
+      isReplied: true,
+      lastRepliedAt: new Date(Date.now() - 3600000 * 18).toISOString(),
+      replySnippet: 'Sounds very promising. Can you share a walkthrough of your deliverability metrics?',
+      isTrash: false
+    },
+    {
+      id: 'lead-saas-104',
+      name: 'Elena Rostova',
+      title: 'Founder & CMO',
+      company: 'Veloce Digital Growth',
+      email: 'elena@velocedigital.io',
+      phone: '+44 20 7946 0912',
+      website: 'https://velocedigital.io',
+      niche: 'Digital Marketing & Growth',
+      location: 'London, United Kingdom',
+      source: 'Verified Prospector',
+      companySize: '11-50 employees',
+      leadScore: 88,
+      icebreaker: 'Loved your podcast episode on outbound email deliverability tactics.',
+      socials: { linkedin: 'https://linkedin.com/in/elena-rostova-growth' },
+      status: 'contacted',
+      websiteStatus: 'alive',
+      responseTimeMs: 95,
+      lastActivityDate: new Date().toISOString(),
+      daysAgo: 4,
+      sentCampaigns: ['camp-b2b-saas-growth'],
+      tags: ['B2B SaaS Founders'],
+      openCount: 1,
+      isReplied: false,
+      isTrash: false
+    },
+    {
+      id: 'lead-saas-105',
+      name: 'David Thorne',
+      title: 'Co-Founder & CTO',
+      company: 'Synthetix AI Logic',
+      email: 'david.thorne@synthetixlogic.com',
+      phone: '+1 (512) 670-8812',
+      website: 'https://synthetixlogic.com',
+      niche: 'AI & Machine Learning Software',
+      location: 'Austin, TX, USA',
+      source: 'AI Miner Engine',
+      companySize: '11-50 employees',
+      leadScore: 93,
+      icebreaker: 'Great engineering insights shared on your Substack regarding agent frameworks.',
+      socials: { linkedin: 'https://linkedin.com/in/david-thorne-cto' },
+      status: 'new',
+      websiteStatus: 'alive',
+      responseTimeMs: 82,
+      lastActivityDate: new Date().toISOString(),
+      daysAgo: 1,
+      sentCampaigns: ['camp-b2b-saas-growth'],
+      tags: ['B2B SaaS Founders', 'VIP Decision Makers'],
+      openCount: 0,
+      isReplied: false,
+      isTrash: false
+    }
+  ];
+
+  const defaultSmtp = [
+    {
+      id: 'smtp-primary-google',
+      name: 'VisualSky Primary Relay (Google Workspace)',
+      provider: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 587,
+      encryption: 'STARTTLS',
+      username: 'outreach@visualsky.agency',
+      fromName: 'Rafiqul VisualSky',
+      fromEmail: 'outreach@visualsky.agency',
+      dailyLimit: 2000,
+      sentToday: 142,
+      status: 'active',
+      deliverabilityScore: 99.4,
+      warmupStatus: 'warmed',
+      warmupMode: 'full',
+      warmupStartDate: '2026-08-01',
+      isTrash: false
+    },
+    {
+      id: 'smtp-secondary-relay',
+      name: 'Dedicated High-Speed SMTP (Infra Relay)',
+      provider: 'custom',
+      host: 'relay.visualsky.io',
+      port: 465,
+      encryption: 'SSL',
+      username: 'dispatch@visualsky.io',
+      fromName: 'VisualSky Outbound Team',
+      fromEmail: 'dispatch@visualsky.io',
+      dailyLimit: 5000,
+      sentToday: 380,
+      status: 'active',
+      deliverabilityScore: 98.7,
+      warmupStatus: 'warmed',
+      warmupMode: 'full',
+      warmupStartDate: '2026-08-10',
+      isTrash: false
+    }
+  ];
+
+  const defaultCampaigns = [
+    {
+      id: 'camp-b2b-saas-growth',
+      name: 'B2B SaaS Outbound & Pipeline Accelerator',
+      niche: 'B2B SaaS & Tech Founders',
+      status: 'running',
+      totalLeads: 5,
+      sentCount: 14,
+      openCount: 9,
+      replyCount: 3,
+      bounceCount: 0,
+      leadIds: defaultLeads.map(l => l.id),
+      sendMode: 'scheduled',
+      scheduleStartTime: '09:00',
+      scheduleEndTime: '18:00',
+      scheduleTimezone: 'Asia/Dhaka',
+      scheduleActiveDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'],
+      sendingIntervalSec: 45,
+      assignedSmtpId: 'smtp-primary-google',
+      createdAt: '2026-09-02',
+      lastRunAt: new Date().toISOString().split('T')[0],
+      steps: [
+        {
+          stepNumber: 1,
+          delayDays: 0,
+          subject: 'quick question regarding {{company}}\'s outbound workflow',
+          body: 'Hi {{name}},\n\nNoticed your rapid expansion in {{niche}} with {{company}}.\n\nMost founders we partner with are frustrated with low open rates and spam folder placement when ramping cold outreach.\n\nWe deployed a dual-relay warming architecture that consistently maintains 98%+ primary inbox deliverability.\n\nWould it make sense to share our 2-minute overview video?\n\nBest regards,\nRafiqul\nVisualSky Platform',
+          triggerCondition: 'all'
+        },
+        {
+          stepNumber: 2,
+          delayDays: 3,
+          subject: 'Re: quick question regarding {{company}}\'s outbound workflow',
+          body: 'Hi {{name}},\n\nFollowing up briefly on my earlier note.\n\nDid you have a chance to take a look at our deliverability benchmarks for {{company}}?\n\nHappy to walk you through our verified domain health checks anytime this week.\n\nBest,\nRafiqul',
+          triggerCondition: 'not_opened_7d'
+        }
+      ]
+    },
+    {
+      id: 'camp-enterprise-partners',
+      name: 'Strategic Agency & Enterprise Expansion Cohort',
+      niche: 'AI & Enterprise Automation',
+      status: 'running',
+      totalLeads: 3,
+      sentCount: 6,
+      openCount: 4,
+      replyCount: 1,
+      bounceCount: 0,
+      leadIds: ['lead-saas-101', 'lead-saas-103', 'lead-saas-105'],
+      sendMode: 'instant',
+      sendingIntervalSec: 30,
+      assignedSmtpId: 'smtp-secondary-relay',
+      createdAt: '2026-09-08',
+      lastRunAt: new Date().toISOString().split('T')[0],
+      steps: [
+        {
+          stepNumber: 1,
+          delayDays: 0,
+          subject: 'partnership proposal: enterprise scaling for {{company}}',
+          body: 'Hi {{name}},\n\nImpressed by {{company}}\'s market traction.\n\nWe provide enterprise client partner onboarding with dedicated white-label portals, high-volume SMTP rotation, and automated warmup.\n\nWould you be open to exploring how we could accelerate your outbound pipeline?\n\nBest,\nRafiqul Islam\nAgency Master Admin, VisualSky',
+          triggerCondition: 'all'
+        }
+      ]
+    }
+  ];
+
+  const defaultThreads = [
+    {
+      id: 'thread-liam-103',
+      leadId: 'lead-saas-103',
+      leadName: 'Liam Chen',
+      leadCompany: 'Nexus Scale Labs',
+      leadEmail: 'liam@nexuslabs.co',
+      subject: 'Re: partnership proposal: enterprise scaling for Nexus Scale Labs',
+      lastMessage: 'Sounds very promising. Can you share a walkthrough of your deliverability metrics?',
+      lastMessageDate: new Date(Date.now() - 3600000 * 18).toISOString(),
+      unreadCount: 1,
+      labels: ['Hot Lead', 'VIP Decision Makers'],
+      isStarred: true,
+      isTrash: false,
+      messages: [
+        {
+          id: 'msg-1',
+          threadId: 'thread-liam-103',
+          sender: 'user',
+          senderName: 'Rafiqul VisualSky',
+          senderEmail: 'outreach@visualsky.agency',
+          recipientName: 'Liam Chen',
+          recipientEmail: 'liam@nexuslabs.co',
+          timestamp: new Date(Date.now() - 3600000 * 24).toISOString(),
+          subject: 'partnership proposal: enterprise scaling for Nexus Scale Labs',
+          body: 'Hi Liam,\n\nImpressed by Nexus Scale Labs\'s market traction.\n\nWe provide enterprise client partner onboarding with dedicated white-label portals and high-volume SMTP rotation.\n\nWould you be open to exploring how we could accelerate your outbound pipeline?\n\nBest,\nRafiqul',
+          isRead: true,
+          status: 'replied'
+        },
+        {
+          id: 'msg-2',
+          threadId: 'thread-liam-103',
+          sender: 'lead',
+          senderName: 'Liam Chen',
+          senderEmail: 'liam@nexuslabs.co',
+          recipientName: 'Rafiqul VisualSky',
+          recipientEmail: 'outreach@visualsky.agency',
+          timestamp: new Date(Date.now() - 3600000 * 18).toISOString(),
+          subject: 'Re: partnership proposal: enterprise scaling for Nexus Scale Labs',
+          body: 'Sounds very promising. Can you share a walkthrough of your deliverability metrics? We are looking to scale our outbound sequence next month.',
+          isRead: false,
+          status: 'replied'
+        }
+      ]
+    }
+  ];
+
+  return {
+    leads: defaultLeads,
+    leadTags: defaultTags,
+    campaigns: defaultCampaigns,
+    smtpAccounts: defaultSmtp,
+    threads: defaultThreads,
+    emailTemplates: [],
+    templateCategories: [],
+    sentEmails: [],
+    minedLeads: [],
+    columnSettings: [],
+    notificationSettings: {},
+    userProfile: {
+      company: 'Visual Sky',
+      title: 'Agency Principal & Master Admin',
+      phone: '01577225248',
+      plan: 'Enterprise',
+      bdtPlanLabel: 'Agency Master Admin (Free Unlimited)',
+      quotaLimit: 50000,
+      quotaUsed: 142,
+      aiCredits: 10000
+    },
+    userId: cleanUserId,
+    email: cleanEmail,
+    lastActiveTab: 'dashboard',
     updatedAt: new Date().toISOString()
   };
 }
@@ -600,6 +936,24 @@ function readUserWorkspace(primaryId?: string, secondaryId?: string): any | null
           } catch {}
         }
       }
+    }
+
+    // If workspace is missing, or has 0 campaigns and 0 leads (or only stubbed test leads), seed with rich starter data
+    const isMasterUser = uniqueCandidates.some(c => c === 'rafiqulvisualsky@gmail.com' || c === 'user-agency-1');
+    const hasMeaningfulWork = mergedWorkspace && (
+      (Array.isArray(mergedWorkspace.campaigns) && mergedWorkspace.campaigns.length > 0) ||
+      (Array.isArray(mergedWorkspace.smtpAccounts) && mergedWorkspace.smtpAccounts.length > 0) ||
+      (Array.isArray(mergedWorkspace.leads) && mergedWorkspace.leads.length > 2)
+    );
+
+    if (isMasterUser && !hasMeaningfulWork) {
+      const seeded = getDefaultWorkspaceForUser('rafiqulvisualsky@gmail.com', 'user-agency-1');
+      if (mergedWorkspace) {
+        mergedWorkspace = smartMergeWorkspaces(seeded, mergedWorkspace);
+      } else {
+        mergedWorkspace = seeded;
+      }
+      writeUserWorkspace('rafiqulvisualsky@gmail.com', mergedWorkspace, 'user-agency-1');
     }
 
     return mergedWorkspace;

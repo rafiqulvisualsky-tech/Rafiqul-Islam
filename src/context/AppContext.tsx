@@ -452,6 +452,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     setActiveTabState(tab);
     try { localStorage.setItem('visualsky_active_tab', tab); } catch {}
+    if (latestWorkspaceRef.current) {
+      (latestWorkspaceRef.current as any).lastActiveTab = tab;
+    }
   };
 
   const setCurrentUser = (user: UserAccount) => {
@@ -638,13 +641,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Load persisted workspace from database
         loadUserWorkspace(syncedUser.email, syncedUser.id || syncedUser.supabaseId);
 
-        // Keep existing active tab if already set or saved, otherwise set default
+        // Keep existing active tab if already set or saved, otherwise default to dashboard
         const savedTab = localStorage.getItem('visualsky_active_tab');
         if (savedTab && (savedTab !== 'owner' || isAgency)) {
           setActiveTabState(savedTab);
-        } else if (isAgency) {
-          setActiveTabState('owner');
-          try { localStorage.setItem('visualsky_active_tab', 'owner'); } catch {}
         } else {
           setActiveTabState('dashboard');
           try { localStorage.setItem('visualsky_active_tab', 'dashboard'); } catch {}
@@ -1020,131 +1020,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         
         // 1. Leads Hydration with LocalStorage sync
         if (Array.isArray(data.leads) && data.leads.length > 0) {
-          setLeads(prevLeads => {
-            const remoteMap = new Map(data.leads.map((l: Lead) => [l.id, l]));
-            const remoteEmailMap = new Map(data.leads.map((l: Lead) => [(l.email || '').toLowerCase(), l]));
-            const merged = [...data.leads];
-            for (const localLead of prevLeads) {
-              if (!remoteMap.has(localLead.id) && !remoteEmailMap.has((localLead.email || '').toLowerCase())) {
-                merged.push(localLead);
-              }
-            }
-            try { localStorage.setItem('visualsky_leads', JSON.stringify(merged)); } catch {}
-            (latestWorkspaceRef.current as any).leads = merged;
-            return merged;
-          });
+          setLeads(data.leads);
+          try { localStorage.setItem('visualsky_leads', JSON.stringify(data.leads)); } catch {}
+          (latestWorkspaceRef.current as any).leads = data.leads;
         }
         
         // 2. Lead Tags Hydration
         if (Array.isArray(data.leadTags) && data.leadTags.length > 0) {
-          setLeadTags(prevTags => {
-            const remoteMap = new Map(data.leadTags.map((t: LeadTag) => [t.id, t]));
-            const remoteNameMap = new Map(data.leadTags.map((t: LeadTag) => [t.name.toLowerCase(), t]));
-            const merged = [...data.leadTags];
-            for (const localTag of prevTags) {
-              if (!remoteMap.has(localTag.id) && !remoteNameMap.has(localTag.name.toLowerCase())) {
-                merged.push(localTag);
-              }
-            }
-            try { localStorage.setItem('visualsky_tags', JSON.stringify(merged)); } catch {}
-            (latestWorkspaceRef.current as any).leadTags = merged;
-            return merged;
-          });
+          setLeadTags(data.leadTags);
+          try { localStorage.setItem('visualsky_tags', JSON.stringify(data.leadTags)); } catch {}
+          (latestWorkspaceRef.current as any).leadTags = data.leadTags;
         }
         
         // 3. SMTP Accounts Hydration
         if (Array.isArray(data.smtpAccounts) && data.smtpAccounts.length > 0) {
-          setSmtpAccounts(prevSmtp => {
-            const remoteMap = new Map(data.smtpAccounts.map((s: SMTPAccount) => [s.id, s]));
-            const merged = [...data.smtpAccounts];
-            for (const localSmtp of prevSmtp) {
-              if (!remoteMap.has(localSmtp.id)) {
-                merged.push(localSmtp);
-              }
-            }
-            try { localStorage.setItem('visualsky_smtp', JSON.stringify(merged)); } catch {}
-            (latestWorkspaceRef.current as any).smtpAccounts = merged;
-            return merged;
-          });
+          setSmtpAccounts(data.smtpAccounts);
+          try { localStorage.setItem('visualsky_smtp', JSON.stringify(data.smtpAccounts)); } catch {}
+          (latestWorkspaceRef.current as any).smtpAccounts = data.smtpAccounts;
         }
         
         // 4. Campaigns Hydration
         if (Array.isArray(data.campaigns) && data.campaigns.length > 0) {
-          setCampaigns(prevCamps => {
-            const remoteMap = new Map(data.campaigns.map((c: Campaign) => [c.id, c]));
-            const merged = [...data.campaigns];
-            for (const localCamp of prevCamps) {
-              if (!remoteMap.has(localCamp.id)) {
-                merged.push(localCamp);
-              }
-            }
-            try { localStorage.setItem('visualsky_campaigns', JSON.stringify(merged)); } catch {}
-            (latestWorkspaceRef.current as any).campaigns = merged;
-            return merged;
-          });
+          setCampaigns(data.campaigns);
+          try { localStorage.setItem('visualsky_campaigns', JSON.stringify(data.campaigns)); } catch {}
+          (latestWorkspaceRef.current as any).campaigns = data.campaigns;
         }
         
         // 5. Email Templates Hydration
         if (Array.isArray(data.emailTemplates) && data.emailTemplates.length > 0) {
-          setEmailTemplates(prevTmpls => {
-            const remoteMap = new Map(data.emailTemplates.map((t: EmailTemplate) => [t.id, t]));
-            const merged = [...data.emailTemplates];
-            for (const localTmpl of prevTmpls) {
-              if (!remoteMap.has(localTmpl.id)) {
-                merged.push(localTmpl);
-              }
-            }
-            try { localStorage.setItem('visualsky_templates', JSON.stringify(merged)); } catch {}
-            (latestWorkspaceRef.current as any).emailTemplates = merged;
-            return merged;
-          });
+          setEmailTemplates(data.emailTemplates);
+          try { localStorage.setItem('visualsky_templates', JSON.stringify(data.emailTemplates)); } catch {}
+          (latestWorkspaceRef.current as any).emailTemplates = data.emailTemplates;
         }
         
         // 6. Template Categories Hydration
         if (Array.isArray(data.templateCategories) && data.templateCategories.length > 0) {
-          setTemplateCategories(prevCats => {
-            const remoteMap = new Map(data.templateCategories.map((c: TemplateCategory) => [c.id, c]));
-            const merged = [...data.templateCategories];
-            for (const localCat of prevCats) {
-              if (!remoteMap.has(localCat.id)) {
-                merged.push(localCat);
-              }
-            }
-            (latestWorkspaceRef.current as any).templateCategories = merged;
-            return merged;
-          });
+          setTemplateCategories(data.templateCategories);
+          (latestWorkspaceRef.current as any).templateCategories = data.templateCategories;
         }
         
         // 7. Threads Hydration
         if (Array.isArray(data.threads) && data.threads.length > 0) {
-          setThreads(prevThreads => {
-            const remoteMap = new Map(data.threads.map((t: any) => [t.id, t]));
-            const merged = [...data.threads];
-            for (const localThread of prevThreads) {
-              if (!remoteMap.has(localThread.id)) {
-                merged.push(localThread);
-              }
-            }
-            try { localStorage.setItem('visualsky_threads', JSON.stringify(merged)); } catch {}
-            (latestWorkspaceRef.current as any).threads = merged;
-            return merged;
-          });
+          setThreads(data.threads);
+          try { localStorage.setItem('visualsky_threads', JSON.stringify(data.threads)); } catch {}
+          (latestWorkspaceRef.current as any).threads = data.threads;
         }
         
         // 8. Sent Emails Hydration
         if (Array.isArray(data.sentEmails) && data.sentEmails.length > 0) {
-          setSentEmails(prevSent => {
-            const remoteMap = new Map(data.sentEmails.map((s: any) => [s.id, s]));
-            const merged = [...data.sentEmails];
-            for (const localSent of prevSent) {
-              if (!remoteMap.has(localSent.id)) {
-                merged.push(localSent);
-              }
-            }
-            try { localStorage.setItem('visualsky_sent_emails', JSON.stringify(merged)); } catch {}
-            (latestWorkspaceRef.current as any).sentEmails = merged;
-            return merged;
-          });
+          setSentEmails(data.sentEmails);
+          try { localStorage.setItem('visualsky_sent_emails', JSON.stringify(data.sentEmails)); } catch {}
+          (latestWorkspaceRef.current as any).sentEmails = data.sentEmails;
         }
         
         // 9. Mined Leads Hydration
@@ -1169,6 +1095,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // 12. User Profile Hydration
         if (data.userProfile && typeof data.userProfile === 'object') {
           setCurrentUserState(prev => ({ ...prev, ...data.userProfile }));
+        }
+
+        // 13. Active Tab Restoration
+        if (data.lastActiveTab && typeof data.lastActiveTab === 'string') {
+          setActiveTabState(data.lastActiveTab);
+          try { localStorage.setItem('visualsky_active_tab', data.lastActiveTab); } catch {}
         }
 
         loadedWorkspaceEmailRef.current = cleanEmail;
@@ -1204,6 +1136,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }, 500);
     }
   };
+
+  // Live Cross-Browser & Tab Focus Sync: automatically pulls latest changes when user switches back to window
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser?.email) return;
+
+    const handleFocusSync = () => {
+      if (document.visibilityState === 'visible' && !isHydratingRef.current) {
+        loadUserWorkspace(currentUser.email, currentUser.id || currentUser.supabaseId);
+      }
+    };
+
+    window.addEventListener('focus', handleFocusSync);
+    window.addEventListener('visibilitychange', handleFocusSync);
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible' && !isHydratingRef.current) {
+        loadUserWorkspace(currentUser.email, currentUser.id || currentUser.supabaseId);
+      }
+    }, 20000);
+
+    return () => {
+      window.removeEventListener('focus', handleFocusSync);
+      window.removeEventListener('visibilitychange', handleFocusSync);
+      clearInterval(interval);
+    };
+  }, [isAuthenticated, currentUser?.email, currentUser?.id]);
 
   // Sync all users and initial workspace on mount
   useEffect(() => {
