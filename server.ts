@@ -492,6 +492,64 @@ app.all('/api/auth/reset-password', (req, res) => {
 });
 
 // Central Database Storage Helpers
+function mergeCollectionById(existingItems: any[], incomingItems: any[], key = 'id', fallbackKey?: string): any[] {
+  const existingArr = Array.isArray(existingItems) ? existingItems : [];
+  const incomingArr = Array.isArray(incomingItems) ? incomingItems : [];
+  
+  if (existingArr.length === 0) return incomingArr;
+  if (incomingArr.length === 0) return existingArr;
+
+  const result = [...incomingArr];
+  const incomingKeySet = new Set(incomingArr.map(item => item && item[key] ? String(item[key]) : '').filter(Boolean));
+  const incomingFallbackSet = fallbackKey ? new Set(incomingArr.map(item => item && item[fallbackKey] ? String(item[fallbackKey]).toLowerCase() : '').filter(Boolean)) : null;
+
+  for (const item of existingArr) {
+    if (!item) continue;
+    const primaryVal = item[key] ? String(item[key]) : '';
+    const fallbackVal = fallbackKey && item[fallbackKey] ? String(item[fallbackKey]).toLowerCase() : '';
+
+    const hasPrimary = primaryVal && incomingKeySet.has(primaryVal);
+    const hasFallback = fallbackVal && incomingFallbackSet && incomingFallbackSet.has(fallbackVal);
+
+    if (!hasPrimary && !hasFallback) {
+      result.push(item);
+    }
+  }
+
+  return result;
+}
+
+function smartMergeWorkspaces(existing: any, incoming: any): any {
+  const e = existing && typeof existing === 'object' ? existing : {};
+  const inc = incoming && typeof incoming === 'object' ? incoming : {};
+
+  return {
+    ...e,
+    ...inc,
+    leads: mergeCollectionById(e.leads, inc.leads, 'id', 'email'),
+    leadTags: mergeCollectionById(e.leadTags, inc.leadTags, 'id', 'name'),
+    campaigns: mergeCollectionById(e.campaigns, inc.campaigns, 'id'),
+    smtpAccounts: mergeCollectionById(e.smtpAccounts, inc.smtpAccounts, 'id', 'user'),
+    emailTemplates: mergeCollectionById(e.emailTemplates, inc.emailTemplates, 'id', 'title'),
+    templateCategories: mergeCollectionById(e.templateCategories, inc.templateCategories, 'id', 'name'),
+    threads: mergeCollectionById(e.threads, inc.threads, 'id'),
+    sentEmails: mergeCollectionById(e.sentEmails, inc.sentEmails, 'id'),
+    minedLeads: mergeCollectionById(e.minedLeads, inc.minedLeads, 'id', 'email'),
+    columnSettings: Array.isArray(inc.columnSettings) && inc.columnSettings.length > 0 ? inc.columnSettings : (Array.isArray(e.columnSettings) && e.columnSettings.length > 0 ? e.columnSettings : []),
+    notificationSettings: {
+      ...(e.notificationSettings || {}),
+      ...(inc.notificationSettings || {})
+    },
+    userProfile: {
+      ...(e.userProfile || {}),
+      ...(inc.userProfile || {})
+    },
+    userId: inc.userId || e.userId,
+    email: inc.email || e.email,
+    updatedAt: new Date().toISOString()
+  };
+}
+
 function readUserWorkspace(primaryId?: string, secondaryId?: string): any | null {
   try {
     const candidates = [primaryId, secondaryId].filter(Boolean) as string[];
@@ -521,7 +579,10 @@ function readUserWorkspace(primaryId?: string, secondaryId?: string): any | null
 
     const uniqueCandidates = Array.from(new Set(candidates.map(c => c.trim().toLowerCase())));
 
-    // Check workspace_{id}.json and user_{email}.json files
+    // Check all workspace_{id}.json and user_{email}.json files and consolidate
+    let mergedWorkspace: any = null;
+    const foundPaths: string[] = [];
+
     for (const cand of uniqueCandidates) {
       const pathsToCheck = [
         getWorkspaceFilePath(cand),
@@ -529,15 +590,19 @@ function readUserWorkspace(primaryId?: string, secondaryId?: string): any | null
       ];
       for (const p of pathsToCheck) {
         if (fs.existsSync(p)) {
-          const content = fs.readFileSync(p, 'utf-8');
-          const parsed = JSON.parse(content);
-          if (parsed && typeof parsed === 'object') {
-            return parsed;
-          }
+          try {
+            const content = fs.readFileSync(p, 'utf-8');
+            const parsed = JSON.parse(content);
+            if (parsed && typeof parsed === 'object') {
+              foundPaths.push(p);
+              mergedWorkspace = mergedWorkspace ? smartMergeWorkspaces(mergedWorkspace, parsed) : parsed;
+            }
+          } catch {}
         }
       }
     }
-    return null;
+
+    return mergedWorkspace;
   } catch (err) {
     console.error('Failed to read workspace from database:', err);
     return null;
@@ -551,6 +616,25 @@ function writeUserWorkspace(primaryId: string, data: any, secondaryId?: string):
     if (secondaryId) idsToWrite.add(secondaryId.trim().toLowerCase());
     if (data?.email) idsToWrite.add(String(data.email).trim().toLowerCase());
     if (data?.userId) idsToWrite.add(String(data.userId).trim().toLowerCase());
+
+    // Also look up registry to add all aliases (e.g. user-agency-1 <-> rafiqulvisualsky@gmail.com)
+    if (fs.existsSync(USERS_LIST_FILE)) {
+      try {
+        const users = JSON.parse(fs.readFileSync(USERS_LIST_FILE, 'utf-8'));
+        for (const id of Array.from(idsToWrite)) {
+          const match = users.find((u: any) => 
+            u.email?.toLowerCase() === id || 
+            u.id?.toLowerCase() === id || 
+            u.supabaseId?.toLowerCase() === id
+          );
+          if (match) {
+            if (match.email) idsToWrite.add(match.email.toLowerCase());
+            if (match.id) idsToWrite.add(match.id.toLowerCase());
+            if (match.supabaseId) idsToWrite.add(match.supabaseId.toLowerCase());
+          }
+        }
+      } catch {}
+    }
 
     const dir = DATA_DIR;
     if (!fs.existsSync(dir)) {
@@ -620,13 +704,12 @@ app.post('/api/user-data/save', (req, res) => {
     }
 
     const existing = readUserWorkspace(userId, email) || {};
-    const mergedWorkspace = {
-      ...existing,
+    const mergedWorkspace = smartMergeWorkspaces(existing, {
       ...data,
       userId: userId || existing.userId,
       email: email || existing.email,
       updatedAt: new Date().toISOString()
-    };
+    });
 
     const written = writeUserWorkspace(userId || email, mergedWorkspace, email || userId);
     if (!written) {
@@ -687,13 +770,12 @@ app.post('/api/user-data/:email', (req, res) => {
     }
 
     const existing = readUserWorkspace(identifier) || {};
-    const mergedWorkspace = {
-      ...existing,
+    const mergedWorkspace = smartMergeWorkspaces(existing, {
       ...data,
       email: data.email || (identifier.includes('@') ? identifier : existing.email),
       userId: data.userId || (!identifier.includes('@') ? identifier : existing.userId),
       updatedAt: new Date().toISOString()
-    };
+    });
 
     const written = writeUserWorkspace(identifier, mergedWorkspace, mergedWorkspace.email || mergedWorkspace.userId);
     if (!written) {

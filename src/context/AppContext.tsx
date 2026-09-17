@@ -435,9 +435,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const savedTab = localStorage.getItem('visualsky_active_tab');
     if (savedTab && (savedTab !== 'owner' || isAgencyUser(user))) {
       setActiveTabState(savedTab);
-    } else if (isAgencyUser(user)) {
-      setActiveTabState('owner');
-      try { localStorage.setItem('visualsky_active_tab', 'owner'); } catch {}
     } else {
       setActiveTabState('dashboard');
       try { localStorage.setItem('visualsky_active_tab', 'dashboard'); } catch {}
@@ -893,13 +890,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Direct manual / immediate workspace save to database (Supabase + Central Backend)
   const saveWorkspaceToDatabase = async (): Promise<boolean> => {
     if (!isAuthenticated || !currentUser?.email) return false;
+    if (isHydratingRef.current || isWorkspaceLoading) return false;
+
     const cleanEmail = currentUser.email.trim().toLowerCase();
     const cleanUserId = (currentUser.id || currentUser.supabaseId || '').trim();
     setSyncStatus('syncing');
 
     try {
+      // Collect latest collections, backing up with state or localStorage if ref is empty
+      const readFallback = (current: any[], key: string) => {
+        if (Array.isArray(current) && current.length > 0) return current;
+        try {
+          const cached = localStorage.getItem(key);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          }
+        } catch {}
+        return current || [];
+      };
+
+      const finalLeads = readFallback(latestWorkspaceRef.current.leads || leads, 'visualsky_leads');
+      const finalCampaigns = readFallback(latestWorkspaceRef.current.campaigns || campaigns, 'visualsky_campaigns');
+      const finalSmtp = readFallback(latestWorkspaceRef.current.smtpAccounts || smtpAccounts, 'visualsky_smtp');
+      const finalTemplates = readFallback(latestWorkspaceRef.current.emailTemplates || emailTemplates, 'visualsky_templates');
+      const finalTags = readFallback(latestWorkspaceRef.current.leadTags || leadTags, 'visualsky_tags');
+      const finalThreads = readFallback(latestWorkspaceRef.current.threads || threads, 'visualsky_threads');
+      const finalSent = readFallback(latestWorkspaceRef.current.sentEmails || sentEmails, 'visualsky_sent_emails');
+
       const payload: WorkspaceData = {
         ...latestWorkspaceRef.current,
+        leads: finalLeads,
+        campaigns: finalCampaigns,
+        smtpAccounts: finalSmtp,
+        emailTemplates: finalTemplates,
+        leadTags: finalTags,
+        threads: finalThreads,
+        sentEmails: finalSent,
         userProfile: {
           quotaUsed: currentUser.quotaUsed,
           quotaLimit: currentUser.quotaLimit,
@@ -990,10 +1017,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (result.success && result.data && typeof result.data === 'object') {
         const data = result.data;
-        // Central database hydration with non-destructive merge
+        
+        // 1. Leads Hydration with LocalStorage sync
         if (Array.isArray(data.leads) && data.leads.length > 0) {
           setLeads(prevLeads => {
-            if (prevLeads.length === 0) return data.leads;
             const remoteMap = new Map(data.leads.map((l: Lead) => [l.id, l]));
             const remoteEmailMap = new Map(data.leads.map((l: Lead) => [(l.email || '').toLowerCase(), l]));
             const merged = [...data.leads];
@@ -1002,12 +1029,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 merged.push(localLead);
               }
             }
+            try { localStorage.setItem('visualsky_leads', JSON.stringify(merged)); } catch {}
+            (latestWorkspaceRef.current as any).leads = merged;
             return merged;
           });
         }
+        
+        // 2. Lead Tags Hydration
         if (Array.isArray(data.leadTags) && data.leadTags.length > 0) {
           setLeadTags(prevTags => {
-            if (prevTags.length === 0) return data.leadTags;
             const remoteMap = new Map(data.leadTags.map((t: LeadTag) => [t.id, t]));
             const remoteNameMap = new Map(data.leadTags.map((t: LeadTag) => [t.name.toLowerCase(), t]));
             const merged = [...data.leadTags];
@@ -1016,12 +1046,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 merged.push(localTag);
               }
             }
+            try { localStorage.setItem('visualsky_tags', JSON.stringify(merged)); } catch {}
+            (latestWorkspaceRef.current as any).leadTags = merged;
             return merged;
           });
         }
+        
+        // 3. SMTP Accounts Hydration
         if (Array.isArray(data.smtpAccounts) && data.smtpAccounts.length > 0) {
           setSmtpAccounts(prevSmtp => {
-            if (prevSmtp.length === 0) return data.smtpAccounts;
             const remoteMap = new Map(data.smtpAccounts.map((s: SMTPAccount) => [s.id, s]));
             const merged = [...data.smtpAccounts];
             for (const localSmtp of prevSmtp) {
@@ -1029,12 +1062,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 merged.push(localSmtp);
               }
             }
+            try { localStorage.setItem('visualsky_smtp', JSON.stringify(merged)); } catch {}
+            (latestWorkspaceRef.current as any).smtpAccounts = merged;
             return merged;
           });
         }
+        
+        // 4. Campaigns Hydration
         if (Array.isArray(data.campaigns) && data.campaigns.length > 0) {
           setCampaigns(prevCamps => {
-            if (prevCamps.length === 0) return data.campaigns;
             const remoteMap = new Map(data.campaigns.map((c: Campaign) => [c.id, c]));
             const merged = [...data.campaigns];
             for (const localCamp of prevCamps) {
@@ -1042,12 +1078,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 merged.push(localCamp);
               }
             }
+            try { localStorage.setItem('visualsky_campaigns', JSON.stringify(merged)); } catch {}
+            (latestWorkspaceRef.current as any).campaigns = merged;
             return merged;
           });
         }
+        
+        // 5. Email Templates Hydration
         if (Array.isArray(data.emailTemplates) && data.emailTemplates.length > 0) {
           setEmailTemplates(prevTmpls => {
-            if (prevTmpls.length === 0) return data.emailTemplates;
             const remoteMap = new Map(data.emailTemplates.map((t: EmailTemplate) => [t.id, t]));
             const merged = [...data.emailTemplates];
             for (const localTmpl of prevTmpls) {
@@ -1055,12 +1094,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 merged.push(localTmpl);
               }
             }
+            try { localStorage.setItem('visualsky_templates', JSON.stringify(merged)); } catch {}
+            (latestWorkspaceRef.current as any).emailTemplates = merged;
             return merged;
           });
         }
+        
+        // 6. Template Categories Hydration
         if (Array.isArray(data.templateCategories) && data.templateCategories.length > 0) {
           setTemplateCategories(prevCats => {
-            if (prevCats.length === 0) return data.templateCategories;
             const remoteMap = new Map(data.templateCategories.map((c: TemplateCategory) => [c.id, c]));
             const merged = [...data.templateCategories];
             for (const localCat of prevCats) {
@@ -1068,24 +1110,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 merged.push(localCat);
               }
             }
+            (latestWorkspaceRef.current as any).templateCategories = merged;
             return merged;
           });
         }
-        if (Array.isArray(data.threads)) {
-          setThreads(data.threads);
+        
+        // 7. Threads Hydration
+        if (Array.isArray(data.threads) && data.threads.length > 0) {
+          setThreads(prevThreads => {
+            const remoteMap = new Map(data.threads.map((t: any) => [t.id, t]));
+            const merged = [...data.threads];
+            for (const localThread of prevThreads) {
+              if (!remoteMap.has(localThread.id)) {
+                merged.push(localThread);
+              }
+            }
+            try { localStorage.setItem('visualsky_threads', JSON.stringify(merged)); } catch {}
+            (latestWorkspaceRef.current as any).threads = merged;
+            return merged;
+          });
         }
-        if (Array.isArray(data.sentEmails)) {
-          setSentEmails(data.sentEmails);
+        
+        // 8. Sent Emails Hydration
+        if (Array.isArray(data.sentEmails) && data.sentEmails.length > 0) {
+          setSentEmails(prevSent => {
+            const remoteMap = new Map(data.sentEmails.map((s: any) => [s.id, s]));
+            const merged = [...data.sentEmails];
+            for (const localSent of prevSent) {
+              if (!remoteMap.has(localSent.id)) {
+                merged.push(localSent);
+              }
+            }
+            try { localStorage.setItem('visualsky_sent_emails', JSON.stringify(merged)); } catch {}
+            (latestWorkspaceRef.current as any).sentEmails = merged;
+            return merged;
+          });
         }
-        if (Array.isArray(data.minedLeads)) {
+        
+        // 9. Mined Leads Hydration
+        if (Array.isArray(data.minedLeads) && data.minedLeads.length > 0) {
           setMinedLeads(data.minedLeads);
+          try { localStorage.setItem('visualsky_mined_leads', JSON.stringify(data.minedLeads)); } catch {}
+          (latestWorkspaceRef.current as any).minedLeads = data.minedLeads;
         }
-        if (Array.isArray(data.columnSettings)) {
+        
+        // 10. Column Settings Hydration
+        if (Array.isArray(data.columnSettings) && data.columnSettings.length > 0) {
           setColumnSettings(data.columnSettings);
+          (latestWorkspaceRef.current as any).columnSettings = data.columnSettings;
         }
+        
+        // 11. Notification Settings Hydration
         if (data.notificationSettings && typeof data.notificationSettings === 'object') {
           setNotificationSettings(data.notificationSettings);
+          (latestWorkspaceRef.current as any).notificationSettings = data.notificationSettings;
         }
+        
+        // 12. User Profile Hydration
         if (data.userProfile && typeof data.userProfile === 'object') {
           setCurrentUserState(prev => ({ ...prev, ...data.userProfile }));
         }
@@ -1095,12 +1176,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSyncStatus('synced');
         return true;
       } else {
-        // If query confirmed no workspace exists yet, immediately save current in-memory workspace as user database
-        await persistUserWorkspace({
-          userId: cleanUserId,
-          email: cleanEmail,
-          data: latestWorkspaceRef.current
-        });
+        // If remote has no record yet, only persist if local has genuine content
+        const hasLocalData = (latestWorkspaceRef.current.leads && latestWorkspaceRef.current.leads.length > 0) ||
+                             (latestWorkspaceRef.current.campaigns && latestWorkspaceRef.current.campaigns.length > 0) ||
+                             (latestWorkspaceRef.current.smtpAccounts && latestWorkspaceRef.current.smtpAccounts.length > 0);
+        if (hasLocalData) {
+          await persistUserWorkspace({
+            userId: cleanUserId,
+            email: cleanEmail,
+            data: latestWorkspaceRef.current
+          });
+        }
 
         loadedWorkspaceEmailRef.current = cleanEmail;
         loadedWorkspaceUserIdRef.current = cleanUserId;
