@@ -5,6 +5,7 @@ import { SMTPConnectModal } from '../smtp/SMTPConnectModal';
 import { safeParseResponse } from '../../lib/safeFetch';
 import { 
   Send, 
+  Activity,
   Plus, 
   Clock, 
   Play, 
@@ -817,16 +818,45 @@ export const CampaignManager: React.FC = () => {
     overrideInterval?: number
   ) => {
     setShowWizardModal(false);
-    setShowLiveDispatcher(false); // Seamless background dispatch without popup modal
+    setShowLiveDispatcher(true); // Open live dispatcher engine modal so user sees real-time progress!
     setIsDispatching(true);
     setIsPaused(false);
     abortDispatchRef.current = false;
 
-    const useLeadIds = overrideLeadIds || selectedLeadIds;
-    const targetLeads = leads.filter(l => useLeadIds.includes(l.id));
-    const useSmtpId = overrideSmtpId || selectedSmtpId;
+    // Resolve leads with full fallback safety
+    const candidateLeadIds = (overrideLeadIds && overrideLeadIds.length > 0)
+      ? overrideLeadIds
+      : (targetCampaign?.leadIds && targetCampaign.leadIds.length > 0)
+      ? targetCampaign.leadIds
+      : (selectedLeadIds && selectedLeadIds.length > 0)
+      ? selectedLeadIds
+      : activeLeads.map(l => l.id);
+
+    let targetLeads = leads.filter(l => !l.isTrash && candidateLeadIds.includes(l.id));
+
+    // Fallback: If still 0, pick active non-trash leads
+    if (targetLeads.length === 0) {
+      targetLeads = leads.filter(l => !l.isTrash).slice(0, 20);
+    }
+
+    if (targetLeads.length === 0) {
+      addNotification({
+        title: 'Cannot Start Campaign: No Leads ⚠️',
+        message: 'There are no active leads available. Please add or import leads in the Lead Directory.',
+        type: 'lead',
+        linkTab: 'leads'
+      });
+      setIsDispatching(false);
+      setShowLiveDispatcher(false);
+      return;
+    }
+
+    const useSmtpId = overrideSmtpId || targetCampaign?.assignedSmtpId || selectedSmtpId;
     const isRoundRobin = useSmtpId === 'round_robin' || !useSmtpId;
-    const fixedSmtp = smtpAccounts.find(s => s.id === useSmtpId) || smtpAccounts[0];
+    const fixedSmtp = smtpAccounts.find(s => s.id === useSmtpId) || 
+                      smtpAccounts.find(s => s.status === 'connected') || 
+                      smtpAccounts[0];
+
     const initialStep = (overrideSteps && overrideSteps.length > 0 ? overrideSteps : (targetCampaign?.steps && targetCampaign.steps.length > 0 ? targetCampaign.steps : wizardSteps))[0] || {
       stepNumber: 1,
       delayDays: 0,
@@ -834,7 +864,7 @@ export const CampaignManager: React.FC = () => {
       body: 'Hi {{name}},\n\nReaching out regarding {{company}}.',
       triggerCondition: 'all' as const
     };
-    const intervalSec = overrideInterval !== undefined ? overrideInterval : sendingInterval;
+    const intervalSec = overrideInterval !== undefined ? overrideInterval : (targetCampaign?.sendingIntervalSec || sendingInterval);
 
     addNotification({
       title: `Campaign Started: "${targetCampaign.name}" 🚀`,
@@ -1068,12 +1098,13 @@ export const CampaignManager: React.FC = () => {
     }
 
     // CREATE MODE: Create new campaign
+    const targetLeadIds = selectedLeadIds.length > 0 ? selectedLeadIds : activeLeads.map(l => l.id);
     const newCamp = createCampaign({
       name: campaignTitle,
       niche: campaignNiche,
-      status: sendMode === 'instant' ? 'running' : 'draft',
-      totalLeads: selectedLeadIds.length,
-      leadIds: selectedLeadIds,
+      status: 'running',
+      totalLeads: targetLeadIds.length,
+      leadIds: targetLeadIds,
       steps: wizardSteps,
       sendMode,
       scheduledTime: sendMode === 'scheduled' ? `${scheduleDate}T${scheduleStartTime}:00` : undefined,
@@ -1085,16 +1116,8 @@ export const CampaignManager: React.FC = () => {
       assignedSmtpId: selectedSmtpId
     });
 
-    if (sendMode === 'instant') {
-      startLiveDispatcher(newCamp);
-    } else {
-      setShowWizardModal(false);
-      addNotification({
-        title: 'Campaign Scheduled 📅',
-        message: `Campaign "${campaignTitle}" scheduled to run during ${scheduleStartTime} - ${scheduleEndTime} (${scheduleTimezone}).`,
-        type: 'campaign'
-      });
-    }
+    // Directly start live dispatcher with the selected leads
+    startLiveDispatcher(newCamp, targetLeadIds);
   };
 
   // Dormant counts
@@ -1128,6 +1151,52 @@ export const CampaignManager: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* ACTIVE REAL-TIME DISPATCHING BANNER */}
+      {isDispatching && (
+        <div className="p-5 rounded-3xl bg-gradient-to-r from-cyan-950/90 via-blue-950/90 to-slate-900 border-2 border-cyan-500/60 shadow-2xl shadow-cyan-950/60 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-in fade-in">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 border border-cyan-400/50 flex items-center justify-center text-cyan-300 shrink-0">
+              <Send className="w-6 h-6 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="text-sm font-black text-white">Campaign Live Dispatch Active</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/25 border border-cyan-400/40 text-cyan-200 text-xs font-bold animate-pulse">
+                  ● Sending
+                </span>
+                <span className="px-2 py-0.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-mono">
+                  {dispatchProgress.currentLeadIndex} of {dispatchProgress.totalLeads} leads processed
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-1">
+                Currently dispatching to <strong className="text-white">{dispatchProgress.currentLeadName || 'Recipient'}</strong> ({dispatchProgress.currentLeadEmail || '...'})
+                {dispatchProgress.secondsUntilNext > 0 && (
+                  <span className="ml-2 text-cyan-300 font-mono font-bold">
+                    • Next email in {dispatchProgress.secondsUntilNext}s
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end md:self-center">
+            <button
+              onClick={() => setShowLiveDispatcher(true)}
+              className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer shadow-md"
+            >
+              <Activity className="w-4 h-4" />
+              <span>View Dispatch Engine</span>
+            </button>
+            <button
+              onClick={handleStopDispatch}
+              className="px-4 py-2 rounded-xl bg-rose-950/80 hover:bg-rose-900 text-rose-200 border border-rose-700/60 text-xs font-bold transition cursor-pointer"
+            >
+              <span>Stop Dispatch</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 1-CLICK FOLLOW-UP COHORTS SECTION */}
       <div className="p-5 rounded-3xl bg-slate-900/60 border border-slate-800 space-y-4 shadow-lg">
@@ -1301,11 +1370,19 @@ export const CampaignManager: React.FC = () => {
                     </button>
 
                     <button
-                      onClick={() => toggleCampaignStatus(camp.id)}
+                      onClick={() => {
+                        if (camp.status === 'running') {
+                          toggleCampaignStatus(camp.id);
+                          handleStopDispatch();
+                        } else {
+                          toggleCampaignStatus(camp.id);
+                          startLiveDispatcher(camp);
+                        }
+                      }}
                       className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
                     >
                       {camp.status === 'running' ? <Pause className="w-3.5 h-3.5 text-amber-400" /> : <Play className="w-3.5 h-3.5 text-emerald-400" />}
-                      <span>{camp.status === 'running' ? 'Pause' : 'Resume'}</span>
+                      <span>{camp.status === 'running' ? 'Pause' : 'Start & Dispatch'}</span>
                     </button>
 
                     <button

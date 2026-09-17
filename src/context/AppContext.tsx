@@ -826,6 +826,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline'>('synced');
   const isHydratingRef = useRef<boolean>(false);
 
+  // Maintain a continually updated ref of workspace data to avoid stale closures in async saves
+  const latestWorkspaceRef = useRef<WorkspaceData>({
+    leads,
+    leadTags,
+    smtpAccounts,
+    campaigns,
+    emailTemplates,
+    templateCategories,
+    threads,
+    sentEmails,
+    minedLeads,
+    columnSettings,
+    notificationSettings,
+    userProfile: {
+      quotaUsed: currentUser?.quotaUsed || 0,
+      quotaLimit: currentUser?.quotaLimit || 50000,
+      aiCredits: currentUser?.aiCredits || 10000,
+      company: currentUser?.company,
+      title: currentUser?.title,
+      phone: currentUser?.phone,
+      plan: currentUser?.plan,
+      bdtPlanLabel: currentUser?.bdtPlanLabel
+    }
+  });
+
+  useEffect(() => {
+    latestWorkspaceRef.current = {
+      leads,
+      leadTags,
+      smtpAccounts,
+      campaigns,
+      emailTemplates,
+      templateCategories,
+      threads,
+      sentEmails,
+      minedLeads,
+      columnSettings,
+      notificationSettings,
+      userProfile: {
+        quotaUsed: currentUser?.quotaUsed || 0,
+        quotaLimit: currentUser?.quotaLimit || 50000,
+        aiCredits: currentUser?.aiCredits || 10000,
+        company: currentUser?.company,
+        title: currentUser?.title,
+        phone: currentUser?.phone,
+        plan: currentUser?.plan,
+        bdtPlanLabel: currentUser?.bdtPlanLabel
+      }
+    };
+  }, [
+    leads,
+    leadTags,
+    smtpAccounts,
+    campaigns,
+    emailTemplates,
+    templateCategories,
+    threads,
+    sentEmails,
+    minedLeads,
+    columnSettings,
+    notificationSettings,
+    currentUser
+  ]);
+
   // Direct manual / immediate workspace save to database (Supabase + Central Backend)
   const saveWorkspaceToDatabase = async (): Promise<boolean> => {
     if (!isAuthenticated || !currentUser?.email) return false;
@@ -835,17 +899,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       const payload: WorkspaceData = {
-        leads,
-        leadTags,
-        smtpAccounts,
-        campaigns,
-        emailTemplates,
-        templateCategories,
-        threads,
-        sentEmails,
-        minedLeads,
-        columnSettings,
-        notificationSettings,
+        ...latestWorkspaceRef.current,
         userProfile: {
           quotaUsed: currentUser.quotaUsed,
           quotaLimit: currentUser.quotaLimit,
@@ -865,6 +919,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
 
       if (res.success) {
+        loadedWorkspaceEmailRef.current = cleanEmail;
+        loadedWorkspaceUserIdRef.current = cleanUserId;
         setSyncStatus('synced');
         return true;
       } else {
@@ -878,10 +934,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Direct Central Database resource persistence helper
+  // Direct Central Database resource persistence helper (Atomic & Race-Condition Safe)
   const persistResourceDirectly = async (resource: string, items: any[]) => {
     if (!isAuthenticated || !currentUser?.email) return;
     const cleanEmail = currentUser.email.trim().toLowerCase();
+    const cleanUserId = (currentUser.id || currentUser.supabaseId || '').trim();
+
+    // Immediately update in ref so any subsequent read has the latest created items
+    (latestWorkspaceRef.current as any)[resource] = items;
+
     try {
       setSyncStatus('syncing');
       await fetch(`/api/user-data/${encodeURIComponent(cleanEmail)}/resource/${encodeURIComponent(resource)}`, {
@@ -892,15 +953,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         },
         body: JSON.stringify({ items })
       });
-      // Also trigger full workspace sync
-      saveWorkspaceToDatabase();
+
+      // Also persist to full workspace record with the new items included
+      await persistUserWorkspace({
+        userId: cleanUserId,
+        email: cleanEmail,
+        data: {
+          ...latestWorkspaceRef.current,
+          [resource]: items
+        }
+      });
+      setSyncStatus('synced');
     } catch (e) {
       console.warn(`Direct database persistence error for ${resource}:`, e);
       setSyncStatus('offline');
     }
   };
 
-  // Load user workspace from database (Cross-Device & Cross-Browser Persistence)
+  // Load user workspace from database (Non-Destructive Merge: never wipe newly created local items)
   const loadUserWorkspace = async (userEmail?: string, userId?: string, seedWorkspaceData?: any): Promise<boolean> => {
     const cleanEmail = (userEmail || currentUser?.email || '').trim().toLowerCase();
     const cleanUserId = (userId || currentUser?.id || currentUser?.supabaseId || '').trim();
@@ -920,24 +990,86 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       if (result.success && result.data && typeof result.data === 'object') {
         const data = result.data;
-        // Central database is the single source of truth - hydrate all workspace state
-        if (Array.isArray(data.leads)) {
-          setLeads(data.leads);
+        // Central database hydration with non-destructive merge
+        if (Array.isArray(data.leads) && data.leads.length > 0) {
+          setLeads(prevLeads => {
+            if (prevLeads.length === 0) return data.leads;
+            const remoteMap = new Map(data.leads.map((l: Lead) => [l.id, l]));
+            const remoteEmailMap = new Map(data.leads.map((l: Lead) => [(l.email || '').toLowerCase(), l]));
+            const merged = [...data.leads];
+            for (const localLead of prevLeads) {
+              if (!remoteMap.has(localLead.id) && !remoteEmailMap.has((localLead.email || '').toLowerCase())) {
+                merged.push(localLead);
+              }
+            }
+            return merged;
+          });
         }
-        if (Array.isArray(data.leadTags)) {
-          setLeadTags(data.leadTags);
+        if (Array.isArray(data.leadTags) && data.leadTags.length > 0) {
+          setLeadTags(prevTags => {
+            if (prevTags.length === 0) return data.leadTags;
+            const remoteMap = new Map(data.leadTags.map((t: LeadTag) => [t.id, t]));
+            const remoteNameMap = new Map(data.leadTags.map((t: LeadTag) => [t.name.toLowerCase(), t]));
+            const merged = [...data.leadTags];
+            for (const localTag of prevTags) {
+              if (!remoteMap.has(localTag.id) && !remoteNameMap.has(localTag.name.toLowerCase())) {
+                merged.push(localTag);
+              }
+            }
+            return merged;
+          });
         }
-        if (Array.isArray(data.smtpAccounts)) {
-          setSmtpAccounts(data.smtpAccounts);
+        if (Array.isArray(data.smtpAccounts) && data.smtpAccounts.length > 0) {
+          setSmtpAccounts(prevSmtp => {
+            if (prevSmtp.length === 0) return data.smtpAccounts;
+            const remoteMap = new Map(data.smtpAccounts.map((s: SMTPAccount) => [s.id, s]));
+            const merged = [...data.smtpAccounts];
+            for (const localSmtp of prevSmtp) {
+              if (!remoteMap.has(localSmtp.id)) {
+                merged.push(localSmtp);
+              }
+            }
+            return merged;
+          });
         }
-        if (Array.isArray(data.campaigns)) {
-          setCampaigns(data.campaigns);
+        if (Array.isArray(data.campaigns) && data.campaigns.length > 0) {
+          setCampaigns(prevCamps => {
+            if (prevCamps.length === 0) return data.campaigns;
+            const remoteMap = new Map(data.campaigns.map((c: Campaign) => [c.id, c]));
+            const merged = [...data.campaigns];
+            for (const localCamp of prevCamps) {
+              if (!remoteMap.has(localCamp.id)) {
+                merged.push(localCamp);
+              }
+            }
+            return merged;
+          });
         }
-        if (Array.isArray(data.emailTemplates)) {
-          setEmailTemplates(data.emailTemplates);
+        if (Array.isArray(data.emailTemplates) && data.emailTemplates.length > 0) {
+          setEmailTemplates(prevTmpls => {
+            if (prevTmpls.length === 0) return data.emailTemplates;
+            const remoteMap = new Map(data.emailTemplates.map((t: EmailTemplate) => [t.id, t]));
+            const merged = [...data.emailTemplates];
+            for (const localTmpl of prevTmpls) {
+              if (!remoteMap.has(localTmpl.id)) {
+                merged.push(localTmpl);
+              }
+            }
+            return merged;
+          });
         }
-        if (Array.isArray(data.templateCategories)) {
-          setTemplateCategories(data.templateCategories);
+        if (Array.isArray(data.templateCategories) && data.templateCategories.length > 0) {
+          setTemplateCategories(prevCats => {
+            if (prevCats.length === 0) return data.templateCategories;
+            const remoteMap = new Map(data.templateCategories.map((c: TemplateCategory) => [c.id, c]));
+            const merged = [...data.templateCategories];
+            for (const localCat of prevCats) {
+              if (!remoteMap.has(localCat.id)) {
+                merged.push(localCat);
+              }
+            }
+            return merged;
+          });
         }
         if (Array.isArray(data.threads)) {
           setThreads(data.threads);
@@ -963,48 +1095,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSyncStatus('synced');
         return true;
       } else {
-        // Only if database query confirmed no workspace exists for a brand new user
-        if (result.source === 'none' && !result.error) {
-          const initialData: WorkspaceData = {
-            leads: INITIAL_LEADS,
-            leadTags: INITIAL_TAGS,
-            smtpAccounts: INITIAL_SMTP,
-            campaigns: [],
-            emailTemplates: INITIAL_TEMPLATES,
-            templateCategories: INITIAL_TEMPLATE_CATEGORIES,
-            threads: INITIAL_THREADS,
-            sentEmails: INITIAL_SENT_LOGS,
-            minedLeads: [],
-            columnSettings: DEFAULT_COLUMNS,
-            notificationSettings: {
-              soundEnabled: true,
-              soundPreset: 'chime',
-              customAudioBase64: null,
-              volume: 85,
-              desktopPushEnabled: true
-            },
-            userProfile: {
-              quotaUsed: 0,
-              quotaLimit: 50000,
-              aiCredits: 10000
-            }
-          };
+        // If query confirmed no workspace exists yet, immediately save current in-memory workspace as user database
+        await persistUserWorkspace({
+          userId: cleanUserId,
+          email: cleanEmail,
+          data: latestWorkspaceRef.current
+        });
 
-          await persistUserWorkspace({
-            userId: cleanUserId,
-            email: cleanEmail,
-            data: initialData
-          });
-
-          loadedWorkspaceEmailRef.current = cleanEmail;
-          loadedWorkspaceUserIdRef.current = cleanUserId;
-          setSyncStatus('synced');
-          return true;
-        } else {
-          // If query errored or offline, keep loadedWorkspaceRef locked to prevent overwriting server records!
-          setSyncStatus('offline');
-          return false;
-        }
+        loadedWorkspaceEmailRef.current = cleanEmail;
+        loadedWorkspaceUserIdRef.current = cleanUserId;
+        setSyncStatus('synced');
+        return true;
       }
     } catch (err) {
       console.warn('Server workspace sync error:', err);
@@ -1067,17 +1168,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => { try { localStorage.setItem('visualsky_mined_leads', JSON.stringify(minedLeads)); } catch {} }, [minedLeads]);
   useEffect(() => { try { localStorage.setItem('visualsky_notification_settings', JSON.stringify(notificationSettings)); } catch {} }, [notificationSettings]);
 
-  // Debounced database workspace sync - only runs when workspace for currentUser has been loaded
+  // Debounced database workspace sync
   useEffect(() => {
     if (!isAuthenticated || !currentUser?.email) return;
     if (isHydratingRef.current || isWorkspaceLoading) return;
-    const cleanEmail = currentUser.email.trim().toLowerCase();
-    const cleanUserId = (currentUser.id || currentUser.supabaseId || '').trim();
-
-    // Guard: Prevent saving until this user's workspace is confirmed loaded from the backend
-    if (loadedWorkspaceEmailRef.current !== cleanEmail && (!cleanUserId || loadedWorkspaceUserIdRef.current !== cleanUserId)) {
-      return;
-    }
 
     setSyncStatus('syncing');
     const timer = setTimeout(() => {

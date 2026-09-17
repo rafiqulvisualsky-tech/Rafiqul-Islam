@@ -45,6 +45,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth, onOpenSendMail, onOp
     activeTab, 
     setActiveTab, 
     notifications, 
+    addNotification,
     unreadNotificationCount, 
     markNotificationRead, 
     deleteNotification,
@@ -67,7 +68,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth, onOpenSendMail, onOp
     threads,
     isWorkspaceLoading,
     syncStatus,
-    loadUserWorkspace
+    loadUserWorkspace,
+    saveWorkspaceToDatabase
   } = useApp();
 
   const [showNotifs, setShowNotifs] = useState<boolean>(false);
@@ -526,16 +528,29 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth, onOpenSendMail, onOp
 
         {/* Real-time Cloud Sync Status */}
         <button
-          onClick={() => {
+          onClick={async () => {
             if (currentUser?.email) {
-              loadUserWorkspace(currentUser.email, currentUser.id || currentUser.supabaseId);
+              const ok = await saveWorkspaceToDatabase();
+              if (ok) {
+                addNotification({
+                  title: 'Cloud Synced! ☁️',
+                  message: 'Workspace saved and confirmed synchronized with central cloud database.',
+                  type: 'system'
+                });
+              } else {
+                addNotification({
+                  title: 'Syncing Status',
+                  message: 'Workspace data cached locally. Automatic background sync active.',
+                  type: 'system'
+                });
+              }
             }
           }}
           title={
             syncStatus === 'syncing' || isWorkspaceLoading
               ? 'Synchronizing workspace with cloud...'
               : syncStatus === 'synced'
-              ? 'Workspace Cloud Synced (Click to re-fetch from database)'
+              ? 'Workspace Cloud Synced (Click to instantly save to database)'
               : 'Local Mode (Click to retry cloud connection)'
           }
           className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 text-xs text-slate-300 transition cursor-pointer"

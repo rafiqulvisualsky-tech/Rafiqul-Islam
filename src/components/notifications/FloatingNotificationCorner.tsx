@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   Bell, 
@@ -34,6 +34,7 @@ export const FloatingNotificationCorner: React.FC = () => {
     }
   });
   const [isEnabling, setIsEnabling] = useState<boolean>(false);
+  const toastTimeoutsRef = useRef<Record<string, NodeJS.Timeout>>({});
 
   // Track new unread notifications and pop them up as floating corner toasts
   useEffect(() => {
@@ -48,9 +49,38 @@ export const FloatingNotificationCorner: React.FC = () => {
   }, [notifications]);
 
   const handleDismissToast = (id: string) => {
+    if (toastTimeoutsRef.current[id]) {
+      clearTimeout(toastTimeoutsRef.current[id]);
+      delete toastTimeoutsRef.current[id];
+    }
     setActiveToastIds(prev => prev.filter(item => item !== id));
     markNotificationRead(id);
   };
+
+  // Auto-dismiss each toast after exactly 3 seconds (3000ms)
+  useEffect(() => {
+    activeToastIds.forEach(id => {
+      if (!toastTimeoutsRef.current[id]) {
+        toastTimeoutsRef.current[id] = setTimeout(() => {
+          handleDismissToast(id);
+        }, 3000);
+      }
+    });
+
+    // Cleanup stale timers
+    Object.keys(toastTimeoutsRef.current).forEach(id => {
+      if (!activeToastIds.includes(id)) {
+        clearTimeout(toastTimeoutsRef.current[id]);
+        delete toastTimeoutsRef.current[id];
+      }
+    });
+  }, [activeToastIds]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(toastTimeoutsRef.current).forEach((timer: any) => clearTimeout(timer));
+    };
+  }, []);
 
   const handleOpenNotification = (notif: any) => {
     if (notif.linkTab) {
@@ -227,8 +257,25 @@ export const FloatingNotificationCorner: React.FC = () => {
               </button>
             </div>
           </div>
+
+          {/* 3-Second Auto-dismiss Progress Indicator */}
+          <div className="w-full bg-slate-800/80 rounded-full h-1 overflow-hidden mt-1">
+            <div 
+              className="bg-gradient-to-r from-cyan-400 to-blue-500 h-full rounded-full"
+              style={{
+                animation: 'toastCountdown 3s linear forwards'
+              }}
+            />
+          </div>
         </div>
       ))}
+
+      <style>{`
+        @keyframes toastCountdown {
+          from { width: 100%; }
+          to { width: 0%; }
+        }
+      `}</style>
     </div>
   );
 };
