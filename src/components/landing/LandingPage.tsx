@@ -88,17 +88,25 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth }) => {
             <a href="#faq" className="hover:text-cyan-400 transition-colors">FAQ</a>
           </nav>
 
-          {/* Top CTAs: Sign In & Sign Up */}
-          <div className="flex items-center gap-3">
+          {/* Top CTAs: Agency Master, Client Login & Sign Up */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              onClick={() => onOpenAuth('signin', 'agency')}
+              className="px-3 sm:px-3.5 py-2 rounded-xl text-xs font-bold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 hover:border-amber-500/50 transition cursor-pointer flex items-center gap-1.5"
+              title="Open Agency Master Portal Login"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+              <span>Agency Master</span>
+            </button>
             <button
               onClick={() => onOpenAuth('signin', 'client')}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-800/80 border border-transparent hover:border-slate-700 transition cursor-pointer"
+              className="px-3 sm:px-4 py-2 rounded-xl text-xs font-bold text-slate-300 hover:text-white hover:bg-slate-800/80 border border-transparent hover:border-slate-700 transition cursor-pointer"
             >
               Sign In
             </button>
             <button
               onClick={() => onOpenAuth('signup', 'client')}
-              className="px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-extrabold shadow-lg shadow-cyan-500/25 transition cursor-pointer flex items-center gap-1.5"
+              className="px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-extrabold shadow-lg shadow-cyan-500/25 transition cursor-pointer flex items-center gap-1.5"
             >
               <span>Get Started</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -567,7 +575,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onOpenAuth }) => {
               <div>
                 <h4 className="text-sm font-bold text-slate-100">Are you an Agency Principal or Workspace Owner?</h4>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Agency Master seats have 100% free unlimited platform capabilities (strictly limited to first 3 seats).
+                  Agency Master seats have 100% free unlimited platform capabilities (strictly limited to first 10 seats).
                 </p>
               </div>
             </div>

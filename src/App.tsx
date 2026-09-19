@@ -139,7 +139,8 @@ const MainContent: React.FC = () => {
   );
 
   const renderActiveView = () => {
-    const isClientRole = currentUser.role === 'client' || currentUser.role === 'customer';
+    const isAgency = currentUser.role === 'agency' || currentUser.role === 'owner' || Boolean(currentUser.isOwner) || currentUser.email === 'sojibdaridro123@gmail.com' || currentUser.email === 'rafiqulvisualsky@gmail.com';
+    const isClientRole = !isAgency && (currentUser.role === 'client' || currentUser.role === 'customer');
     
     // Check if account is suspended
     if (isClientRole && currentUser.permissions?.accountStatus === 'suspended') {

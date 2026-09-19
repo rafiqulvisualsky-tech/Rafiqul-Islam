@@ -74,13 +74,21 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
   };
 
   const navItems = [
+    ...(isAgency ? [{
+      id: 'owner',
+      label: 'Agency Master Dashboard',
+      description: 'Client management, billing & master control',
+      icon: ShieldCheck,
+      badge: '👑 Master Admin',
+      badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-bold'
+    }] : []),
     {
       id: 'dashboard',
-      label: 'Main Dashboard',
-      description: 'Analytics & pipeline overview',
+      label: isAgency ? 'Main Dashboard' : 'Client Workspace',
+      description: isAgency ? 'Analytics & pipeline overview' : 'Outreach campaigns, leads & AI inbox',
       icon: LayoutDashboard,
-      badge: 'Overview',
-      badgeColor: 'bg-blue-500/10 text-blue-300 border-blue-500/20'
+      badge: isAgency ? 'Overview' : '💼 Client',
+      badgeColor: isAgency ? 'bg-blue-500/10 text-blue-300 border-blue-500/20' : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'
     },
     {
       id: 'smtp',
@@ -154,14 +162,6 @@ export const MobileNavDrawer: React.FC<MobileNavDrawerProps> = ({
       tag: isServiceDisabled('ai_copilot') ? '🔒 Disabled' : 'Chat',
       tagColor: isServiceDisabled('ai_copilot') ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
     },
-    ...(isAgency ? [{
-      id: 'owner',
-      label: 'Agency Master Dashboard',
-      description: 'Client management & pricing plans',
-      icon: ShieldCheck,
-      tag: '👑 Agency',
-      tagColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
-    }] : []),
     {
       id: 'trash',
       label: 'Trash & Recovery',

@@ -185,7 +185,7 @@ interface AppContextType {
   // User Accounts & Portal Roles
   isAuthenticated: boolean;
   setIsAuthenticated: (auth: boolean) => void;
-  loginUser: (user: UserAccount) => void;
+  loginUser: (user: UserAccount, targetTab?: string) => void;
   currentUser: UserAccount;
   setCurrentUser: (user: UserAccount) => void;
   allUsers: UserAccount[];
@@ -338,7 +338,7 @@ const INITIAL_SMTP: SMTPAccount[] = [];
 // Initial Sent Email Logs (Clean empty initial list)
 const INITIAL_SENT_LOGS: SentEmailLog[] = [];
 
-// Initial Users (Clean Master Admin account)
+// Initial Users (Clean Master Admin accounts)
 const INITIAL_USERS: UserAccount[] = [
   {
     id: 'user-agency-1',
@@ -354,7 +354,54 @@ const INITIAL_USERS: UserAccount[] = [
     aiCredits: 10000,
     company: 'Visual Sky',
     title: 'Agency Principal & Master Admin',
-    joinedAt: '2026-08-29'
+    joinedAt: '2026-08-29',
+    password: '@Shams3836'
+  },
+  {
+    id: '1712d8ef-7287-4f81-a64f-e6d8d216f479',
+    name: 'RAFIQUL ISLAM',
+    email: 'sojibdaridro123@gmail.com',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    role: 'agency',
+    isOwner: true,
+    plan: 'Enterprise',
+    bdtPlanLabel: 'Agency Master Admin (Free Unlimited)',
+    quotaUsed: 0,
+    quotaLimit: 50000,
+    aiCredits: 10000,
+    company: 'VisualSky Agency Platform',
+    title: 'Agency Principal & Master Admin',
+    phone: '01577225248',
+    joinedAt: '2026-09-01',
+    password: '@Shams3836'
+  },
+  {
+    id: 'user-client-1',
+    name: 'Tanvir Ahmed',
+    email: 'client@growthagency.com',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+    role: 'client',
+    isOwner: false,
+    plan: 'Pro',
+    bdtPlanLabel: 'Growth Accelerator (৳4,500/mo)',
+    quotaUsed: 125,
+    quotaLimit: 15000,
+    aiCredits: 5000,
+    company: 'Growth Scale Agency',
+    title: 'Director of Outreach',
+    phone: '01719876543',
+    joinedAt: '2026-09-02',
+    password: '@Shams3836',
+    paymentInfo: {
+      method: 'bKash',
+      planName: 'Growth Accelerator (৳4,500/mo)',
+      amountBDT: 4500,
+      trxId: 'BKA9823KL12',
+      senderPhone: '01719876543',
+      paymentDate: '2026-09-02',
+      status: 'verified',
+      ownerPayoutAccount: '01577225248 (bKash Personal)'
+    }
   }
 ];
 
@@ -400,7 +447,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentUser, setCurrentUserState] = useState<UserAccount>(() => {
     try {
       const saved = localStorage.getItem('visualsky_current_user');
-      return saved ? JSON.parse(saved) : INITIAL_USERS[0];
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed) {
+          const emailLower = (parsed.email || '').toLowerCase();
+          if (emailLower === 'rafiqulvisualsky@gmail.com' || emailLower === 'sojibdaridro123@gmail.com' || emailLower.includes('admin@visualsky')) {
+            parsed.role = 'agency';
+            parsed.isOwner = true;
+          }
+          return parsed;
+        }
+      }
+      return INITIAL_USERS[0];
     } catch {
       return INITIAL_USERS[0];
     }
@@ -408,7 +466,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Client vs Agency / Owner route guard
   const isAgencyUser = (user: UserAccount) => {
-    return user.role === 'agency' || user.role === 'owner' || Boolean(user.isOwner);
+    if (!user) return false;
+    if (user.role === 'agency' || user.role === 'owner' || Boolean(user.isOwner)) return true;
+    const cleanEmail = (user.email || '').toLowerCase();
+    return (
+      cleanEmail === 'rafiqulvisualsky@gmail.com' ||
+      cleanEmail === 'sojibdaridro123@gmail.com' ||
+      cleanEmail.includes('admin@visualsky') ||
+      cleanEmail.includes('agency@visualsky')
+    );
   };
 
   const setIsAuthenticated = (auth: boolean) => {
@@ -423,24 +489,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {}
   };
 
-  const loginUser = (user: UserAccount) => {
-    setCurrentUserState(user);
+  const loginUser = (user: UserAccount, targetTab?: string) => {
+    const isAgency = isAgencyUser(user) || user.email?.toLowerCase() === 'rafiqulvisualsky@gmail.com' || user.email?.toLowerCase() === 'sojibdaridro123@gmail.com';
+    const safeUser: UserAccount = {
+      ...user,
+      role: isAgency ? 'agency' : (user.role || 'client'),
+      isOwner: isAgency || Boolean(user.isOwner),
+      plan: isAgency ? 'Enterprise' : (user.plan || 'Pro')
+    };
+
+    setCurrentUserState(safeUser);
     setIsAuthenticatedState(true);
     try {
       localStorage.setItem('visualsky_authenticated', 'true');
-      localStorage.setItem('visualsky_current_user', JSON.stringify(user));
+      localStorage.setItem('visualsky_current_user', JSON.stringify(safeUser));
     } catch {}
     
-    // Check if user had a previously saved tab
-    const savedTab = localStorage.getItem('visualsky_active_tab');
-    if (savedTab && (savedTab !== 'owner' || isAgencyUser(user))) {
-      setActiveTabState(savedTab);
-    } else {
-      setActiveTabState('dashboard');
-      try { localStorage.setItem('visualsky_active_tab', 'dashboard'); } catch {}
-    }
+    // Choose destination tab: Agency Master directly enters 'owner', Client enters 'dashboard'
+    const chosenTab = targetTab || (isAgency ? 'owner' : 'dashboard');
+    setActiveTabState(chosenTab);
+    try { localStorage.setItem('visualsky_active_tab', chosenTab); } catch {}
+
     // Cross-browser sync: immediately load database workspace
-    loadUserWorkspace(user.email, user.id || user.supabaseId);
+    loadUserWorkspace(safeUser.email, safeUser.id || safeUser.supabaseId);
   };
 
   const setActiveTab = (tab: string) => {
@@ -1099,8 +1170,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // 13. Active Tab Restoration
         if (data.lastActiveTab && typeof data.lastActiveTab === 'string') {
-          setActiveTabState(data.lastActiveTab);
-          try { localStorage.setItem('visualsky_active_tab', data.lastActiveTab); } catch {}
+          const storedTab = localStorage.getItem('visualsky_active_tab');
+          if (storedTab === 'owner' && isAgencyUser(currentUser)) {
+            setActiveTabState('owner');
+          } else {
+            setActiveTabState(data.lastActiveTab);
+            try { localStorage.setItem('visualsky_active_tab', data.lastActiveTab); } catch {}
+          }
         }
 
         loadedWorkspaceEmailRef.current = cleanEmail;
@@ -2560,7 +2636,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (existingIndex >= 0) {
         updated = prev.map((u, i) => (i === existingIndex ? { ...u, password: newPass } : u));
       } else {
-        const isAgency = cleanEmail.includes('admin') || cleanEmail.includes('agency') || cleanEmail === 'rafiqulvisualsky@gmail.com';
+        const isAgency = cleanEmail.includes('admin') || cleanEmail.includes('agency') || cleanEmail === 'rafiqulvisualsky@gmail.com' || cleanEmail === 'sojibdaridro123@gmail.com';
         const newUser: UserAccount = {
           id: `usr-${Date.now()}`,
           name: cleanEmail.split('@')[0],

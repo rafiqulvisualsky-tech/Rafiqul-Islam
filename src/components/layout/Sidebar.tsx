@@ -48,6 +48,13 @@ export const Sidebar: React.FC = () => {
   };
 
   const navItems = [
+    ...(isAgency ? [{
+      id: 'owner',
+      label: 'Agency Master Dashboard',
+      icon: ShieldCheck,
+      badge: '👑 Master Admin',
+      badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-bold'
+    }] : []),
     {
       id: 'dashboard',
       label: 'Main Dashboard',
@@ -118,13 +125,6 @@ export const Sidebar: React.FC = () => {
       tag: isServiceDisabled('ai_copilot') ? '🔒 Disabled' : 'Chat',
       tagColor: isServiceDisabled('ai_copilot') ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
     },
-    ...(isAgency ? [{
-      id: 'owner',
-      label: 'Agency Master Dashboard',
-      icon: ShieldCheck,
-      tag: '👑 Agency',
-      tagColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
-    }] : []),
     {
       id: 'trash',
       label: 'Trash & Recovery',
@@ -197,10 +197,12 @@ export const Sidebar: React.FC = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-bold text-slate-200">
               <Zap className="w-3.5 h-3.5 text-cyan-400 fill-cyan-400/20" />
-              <span className="truncate">{currentUser.plan} Plan</span>
+              <span className="truncate">
+                {currentUser.role === 'agency' || currentUser.role === 'owner' || currentUser.isOwner ? '👑 Agency Master' : '💼 Client Workspace'}
+              </span>
             </div>
-            <span className="text-[10px] text-cyan-400 font-bold">
-              {Math.round((1 - currentUser.quotaUsed / currentUser.quotaLimit) * 100)}% Left
+            <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider">
+              {currentUser.plan}
             </span>
           </div>
 

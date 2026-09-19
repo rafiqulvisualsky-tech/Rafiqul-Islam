@@ -30,7 +30,8 @@ import {
   X,
   Cloud,
   CloudOff,
-  RefreshCw
+  RefreshCw,
+  Zap
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -420,6 +421,38 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth, onOpenSendMail, onOp
 
       {/* Right Actions (Single Line Bar, Send Mail button prominently visible) */}
       <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+        {/* Direct Agency Master Quick Access Button if Agency User */}
+        {(currentUser.role === 'agency' || currentUser.role === 'owner' || currentUser.isOwner || currentUser.email === 'sojibdaridro123@gmail.com' || currentUser.email === 'rafiqulvisualsky@gmail.com') && (
+          <button
+            onClick={() => setActiveTab('owner')}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition shrink-0 cursor-pointer border ${
+              activeTab === 'owner'
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 shadow-lg shadow-amber-500/10'
+                : 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20 hover:border-amber-500/50'
+            }`}
+            title="Agency Master Administrative Dashboard"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+            <span className="whitespace-nowrap font-extrabold">Agency Master</span>
+          </button>
+        )}
+
+        {/* Direct Client Portal Quick Access Button if Client User */}
+        {currentUser.role === 'client' && (
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition shrink-0 cursor-pointer border ${
+              activeTab === 'dashboard'
+                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/60 shadow-lg shadow-cyan-500/10'
+                : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/20 hover:border-cyan-500/50'
+            }`}
+            title="Client Workspace Dashboard & Outreach Campaigns"
+          >
+            <Zap className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="whitespace-nowrap font-extrabold">Client Workspace</span>
+          </button>
+        )}
+
         {/* Send Mail Action Button (User request from original app) */}
         {onOpenSendMail && (
           <button
@@ -785,16 +818,29 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth, onOpenSendMail, onOp
                   My Profile & Settings
                 </button>
 
-                {(currentUser.role === 'agency' || currentUser.role === 'owner' || currentUser.isOwner) && (
+                {(currentUser.role === 'agency' || currentUser.role === 'owner' || currentUser.isOwner || currentUser.email === 'sojibdaridro123@gmail.com' || currentUser.email === 'rafiqulvisualsky@gmail.com') && (
                   <button
                     onClick={() => {
                       setShowProfileMenu(false);
                       setActiveTab('owner');
                     }}
-                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-amber-300 hover:bg-amber-950/40 flex items-center gap-2 font-semibold cursor-pointer transition"
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 flex items-center gap-2 font-bold cursor-pointer transition"
                   >
                     <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-                    Agency Master Dashboard
+                    👑 Agency Master Dashboard
+                  </button>
+                )}
+
+                {currentUser.role === 'client' && (
+                  <button
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      setActiveTab('dashboard');
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 hover:bg-cyan-500/20 flex items-center gap-2 font-bold cursor-pointer transition"
+                  >
+                    <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                    💼 Client Workspace Dashboard
                   </button>
                 )}
 

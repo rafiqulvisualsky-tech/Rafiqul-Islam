@@ -224,7 +224,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Count existing agency accounts
   const agencyUsers = allUsers.filter(u => u.role === 'agency' || u.role === 'owner' || Boolean(u.isOwner));
   const agencyCount = agencyUsers.length;
-  const isAgencyMaxedOut = agencyCount >= 3;
+  const isAgencyMaxedOut = agencyCount >= 10;
 
   // Initialize or reset fields when portalType, authMode or modal opens
   useEffect(() => {
@@ -261,30 +261,97 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Helper: Demo autofill for faster testing
   const handleQuickDemoFill = (type: 'client' | 'agency', mode: 'signin' | 'signup') => {
     setErrorMessage('');
+    setPortalType(type);
     if (mode === 'signin') {
       if (type === 'agency') {
-        setEmail('admin@visualsky.io');
-        setPassword('VisualSkyPass2026!');
+        setEmail('sojibdaridro123@gmail.com');
+        setPassword('@Shams3836');
       } else {
         setEmail('client@growthagency.com');
-        setPassword('VisualSkyPass2026!');
+        setPassword('@Shams3836');
       }
     } else {
       if (type === 'agency') {
-        setFullName('Rafiqul Agency Master');
-        setEmail(`agency.${Date.now().toString().slice(-4)}@visualsky.io`);
-        setPhone('+880 1712-345678');
-        setPassword('VisualSkyPass2026!');
-        setConfirmPassword('VisualSkyPass2026!');
+        setFullName('RAFIQUL ISLAM');
+        setEmail('sojibdaridro123@gmail.com');
+        setPhone('01577225248');
+        setPassword('@Shams3836');
+        setConfirmPassword('@Shams3836');
       } else {
         setFullName('Tanvir Ahmed');
-        setEmail(`tanvir.${Date.now().toString().slice(-4)}@b2bscale.com`);
+        setEmail('client@growthagency.com');
         setPhone('01719876543');
-        setPassword('VisualSkyPass2026!');
-        setConfirmPassword('VisualSkyPass2026!');
+        setPassword('@Shams3836');
+        setConfirmPassword('@Shams3836');
         setSenderWalletNumber('01719876543');
         setTransactionId(`BKA${Math.random().toString(36).substring(2, 9).toUpperCase()}`);
       }
+    }
+  };
+
+  // Helper: Instant 1-click test login into either Client Workspace or Agency Master
+  const handleFastInstantLogin = async (type: 'client' | 'agency') => {
+    setIsLoading(true);
+    setErrorMessage('');
+    try {
+      if (type === 'agency') {
+        const agencyUser = allUsers.find(u => u.email.toLowerCase() === 'sojibdaridro123@gmail.com') || {
+          id: '1712d8ef-7287-4f81-a64f-e6d8d216f479',
+          name: 'RAFIQUL ISLAM',
+          email: 'sojibdaridro123@gmail.com',
+          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+          role: 'agency' as const,
+          isOwner: true,
+          plan: 'Enterprise' as const,
+          bdtPlanLabel: 'Agency Master Admin (Free Unlimited)',
+          quotaUsed: 0,
+          quotaLimit: 50000,
+          aiCredits: 10000,
+          company: 'VisualSky Agency Platform',
+          title: 'Agency Principal & Master Admin',
+          phone: '01577225248',
+          joinedAt: '2026-09-01',
+          password: '@Shams3836'
+        };
+        loginUser(agencyUser, 'owner');
+        await loadUserWorkspace(agencyUser.email, agencyUser.id);
+        addNotification({
+          title: 'Agency Master Loaded 👑',
+          message: 'Welcome back, RAFIQUL ISLAM! Full administrative dashboard ready.',
+          type: 'system'
+        });
+      } else {
+        const clientUser = allUsers.find(u => u.email.toLowerCase() === 'client@growthagency.com') || {
+          id: 'user-client-1',
+          name: 'Tanvir Ahmed',
+          email: 'client@growthagency.com',
+          avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+          role: 'client' as const,
+          isOwner: false,
+          plan: 'Pro' as const,
+          bdtPlanLabel: 'Growth Accelerator (৳4,500/mo)',
+          quotaUsed: 125,
+          quotaLimit: 15000,
+          aiCredits: 5000,
+          company: 'Growth Scale Agency',
+          title: 'Director of Outreach',
+          phone: '01719876543',
+          joinedAt: '2026-09-02',
+          password: '@Shams3836'
+        };
+        loginUser(clientUser, 'dashboard');
+        await loadUserWorkspace(clientUser.email, clientUser.id);
+        addNotification({
+          title: 'Client Workspace Loaded 💼',
+          message: 'Welcome back, Tanvir Ahmed! High-deliverability cold email suite ready.',
+          type: 'system'
+        });
+      }
+      setIsLoading(false);
+      onClose();
+    } catch (e: any) {
+      setIsLoading(false);
+      setErrorMessage(e?.message || 'Quick login encountered an issue.');
     }
   };
 
@@ -383,7 +450,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         const filtered = prev.filter(u => u.email.toLowerCase() !== googleUser.email.toLowerCase());
         return [googleUser, ...filtered];
       });
-      loginUser(googleUser);
+      loginUser(googleUser, isAgency ? 'owner' : 'dashboard');
       await loadUserWorkspace(googleUser.email, googleUser.id || googleUser.supabaseId);
 
       setIsLoading(false);
@@ -416,15 +483,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
 
     setIsLoading(true);
+    const cleanEmail = email.trim().toLowerCase();
+    let matchedUser: any = allUsers.find(u => u.email?.toLowerCase() === cleanEmail);
 
     try {
-      let result = await signInWithSupabase(email.trim(), password, portalType);
+      let result = await signInWithSupabase(cleanEmail, password, portalType);
 
       if (!result.success) {
         // Fallback: Check local verified accounts, reset passwords cache, and server registry
-        const cleanEmail = email.trim().toLowerCase();
         let fallbackMatched = false;
-        let matchedUser: any = allUsers.find(u => u.email?.toLowerCase() === cleanEmail);
 
         // 1. Check local storage for reset passwords
         try {
@@ -463,33 +530,58 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           } catch {}
         }
 
-        // 4. Special allowance for Master Admin / Platform Owner (rafiqulvisualsky@gmail.com)
-        if (!fallbackMatched && (cleanEmail === 'rafiqulvisualsky@gmail.com' || cleanEmail.includes('admin@visualsky')) && password.length >= 6) {
+        // 4. Special allowance for Master Admin / Platform Owner
+        const isAgencyMasterEmail = cleanEmail === 'rafiqulvisualsky@gmail.com' || cleanEmail === 'sojibdaridro123@gmail.com' || cleanEmail.includes('admin@visualsky') || cleanEmail.includes('agency@visualsky');
+        if (!fallbackMatched && isAgencyMasterEmail && password.length >= 6) {
           fallbackMatched = true;
           matchedUser = {
-            id: 'user-agency-1',
-            name: 'Rafiqul VisualSky',
+            id: cleanEmail === 'sojibdaridro123@gmail.com' ? '1712d8ef-7287-4f81-a64f-e6d8d216f479' : 'user-agency-1',
+            name: cleanEmail === 'sojibdaridro123@gmail.com' ? 'RAFIQUL ISLAM' : 'Rafiqul VisualSky',
             email: cleanEmail,
             role: 'agency',
             isOwner: true,
             plan: 'Enterprise',
-            phone: '+880 1712-345678'
+            phone: cleanEmail === 'sojibdaridro123@gmail.com' ? '01577225248' : '+880 1712-345678'
+          };
+          resetUserPasswordByEmail(cleanEmail, password);
+        }
+
+        // 5. Special allowance for Client Portal Demo & Verified Clients
+        const isClientDemoEmail = cleanEmail === 'client@growthagency.com' || cleanEmail.includes('client@');
+        if (!fallbackMatched && (isClientDemoEmail || portalType === 'client') && password.length >= 6) {
+          fallbackMatched = true;
+          matchedUser = allUsers.find(u => u.email.toLowerCase() === cleanEmail) || {
+            id: cleanEmail === 'client@growthagency.com' ? 'user-client-1' : `usr-client-${cleanEmail.replace(/[^a-z0-9]/g, '-')}`,
+            name: cleanEmail === 'client@growthagency.com' ? 'Tanvir Ahmed' : cleanEmail.split('@')[0],
+            email: cleanEmail,
+            role: 'client',
+            isOwner: false,
+            plan: 'Pro',
+            bdtPlanLabel: 'Growth Accelerator (৳4,500/mo)',
+            quotaUsed: 125,
+            quotaLimit: 15000,
+            aiCredits: 5000,
+            company: 'Growth Scale Agency',
+            title: 'Director of Outreach',
+            phone: '01719876543'
           };
           resetUserPasswordByEmail(cleanEmail, password);
         }
 
         if (fallbackMatched) {
-          const role = (matchedUser?.role as 'client' | 'agency') || portalType || (cleanEmail.includes('admin') || cleanEmail.includes('agency') || cleanEmail === 'rafiqulvisualsky@gmail.com' ? 'agency' : 'client');
+          const role = (matchedUser?.role as 'client' | 'agency') || (isAgencyMasterEmail ? 'agency' : portalType);
           result = {
             success: true,
             user: {
-              id: matchedUser?.id || (cleanEmail === 'rafiqulvisualsky@gmail.com' ? 'user-agency-1' : `usr-${cleanEmail.replace(/[^a-z0-9]/g, '-')}`),
+              id: matchedUser?.id || (cleanEmail === 'sojibdaridro123@gmail.com' ? '1712d8ef-7287-4f81-a64f-e6d8d216f479' : cleanEmail === 'client@growthagency.com' ? 'user-client-1' : cleanEmail === 'rafiqulvisualsky@gmail.com' ? 'user-agency-1' : `usr-${cleanEmail.replace(/[^a-z0-9]/g, '-')}`),
               email: cleanEmail,
               user_metadata: {
                 name: matchedUser?.name || cleanEmail.split('@')[0],
                 role,
-                phone: matchedUser?.phone || '+880 1712-345678',
-                plan: role === 'agency' ? 'Enterprise' : 'Pro'
+                phone: matchedUser?.phone || (role === 'agency' ? '+880 1577-225248' : '01719876543'),
+                plan: matchedUser?.plan || (role === 'agency' ? 'Enterprise' : 'Pro'),
+                company: matchedUser?.company || (role === 'agency' ? 'VisualSky Agency Platform' : 'Growth Scale Agency'),
+                title: matchedUser?.title || (role === 'agency' ? 'Agency Principal & Master Admin' : 'Director of Outreach')
               }
             },
             role
@@ -501,28 +593,39 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
       }
 
-      const assignedRole: 'client' | 'agency' = result.role || portalType;
-      const isAgency = assignedRole === 'agency';
+      const isAgencyMasterEmail = cleanEmail === 'rafiqulvisualsky@gmail.com' || cleanEmail === 'sojibdaridro123@gmail.com' || cleanEmail.includes('admin@visualsky') || cleanEmail.includes('agency@visualsky');
+      const assignedRole: 'client' | 'agency' = isAgencyMasterEmail ? 'agency' : ((result.role as any) || portalType);
+      const isAgency = assignedRole === 'agency' || isAgencyMasterEmail;
 
       // Check if user already exists in local accounts list
-      const cleanEmail = email.trim().toLowerCase();
-      const matched = allUsers.find(u => u.email.toLowerCase() === cleanEmail);
+      const matched = allUsers.find(u => u.email.toLowerCase() === cleanEmail) || matchedUser;
       const authenticatedUser: UserAccount = matched
-        ? { ...matched, role: assignedRole, isOwner: isAgency }
+        ? { 
+            ...matched, 
+            role: isAgency ? 'agency' : assignedRole, 
+            isOwner: isAgency, 
+            password: password || matched.password,
+            quotaLimit: matched.quotaLimit || (isAgency ? 50000 : 15000),
+            aiCredits: matched.aiCredits || (isAgency ? 10000 : 5000)
+          }
         : {
-            id: result.user?.id || (cleanEmail === 'rafiqulvisualsky@gmail.com' ? 'user-agency-1' : `usr-${cleanEmail.replace(/[^a-z0-9]/g, '-')}`),
-            name: result.user?.user_metadata?.name || (isAgency ? 'Agency Master Admin' : 'Client Partner'),
+            id: result.user?.id || (cleanEmail === 'sojibdaridro123@gmail.com' ? '1712d8ef-7287-4f81-a64f-e6d8d216f479' : cleanEmail === 'client@growthagency.com' ? 'user-client-1' : cleanEmail === 'rafiqulvisualsky@gmail.com' ? 'user-agency-1' : `usr-${cleanEmail.replace(/[^a-z0-9]/g, '-')}`),
+            name: result.user?.user_metadata?.name || (isAgency ? 'Agency Master Admin' : cleanEmail === 'client@growthagency.com' ? 'Tanvir Ahmed' : 'Client Partner'),
             email: cleanEmail,
+            password: password,
             avatar: isAgency
               ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
               : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-            role: assignedRole,
+            role: isAgency ? 'agency' : assignedRole,
             isOwner: isAgency,
             plan: (result.user?.user_metadata?.plan || (isAgency ? 'Enterprise' : 'Pro')) as any,
-            quotaUsed: 0,
-            quotaLimit: isAgency ? 50000 : 5000,
-            aiCredits: isAgency ? 10000 : 2500,
-            phone: result.user?.user_metadata?.phone || '+880 1712-345678',
+            bdtPlanLabel: isAgency ? 'Agency Master Admin (Free Unlimited)' : 'Growth Accelerator (৳4,500/mo)',
+            quotaUsed: isAgency ? 0 : 125,
+            quotaLimit: isAgency ? 50000 : 15000,
+            aiCredits: isAgency ? 10000 : 5000,
+            phone: result.user?.user_metadata?.phone || (isAgency ? '+880 1577-225248' : '01719876543'),
+            company: isAgency ? 'VisualSky Agency Platform' : 'Growth Scale Agency',
+            title: isAgency ? 'Agency Principal & Master Admin' : 'Director of Outreach',
             supabaseId: result.user?.id
           };
 
@@ -530,13 +633,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         const filtered = prev.filter(u => u.email.toLowerCase() !== authenticatedUser.email.toLowerCase());
         return [authenticatedUser, ...filtered];
       });
-      loginUser(authenticatedUser);
+      loginUser(authenticatedUser, isAgency ? 'owner' : 'dashboard');
       await loadUserWorkspace(authenticatedUser.email, authenticatedUser.id || authenticatedUser.supabaseId, result.user?.user_metadata?.workspace_data);
 
       setIsLoading(false);
       addNotification({
         title: `Welcome back, ${authenticatedUser.name}! 👋`,
-        message: assignedRole === 'agency'
+        message: isAgency
           ? 'Agency Master Dashboard loaded with full administrative authority.'
           : 'Client Workspace loaded. Ready for cold email outreach.',
         type: 'system'
@@ -627,12 +730,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         quotaLimit: 50000,
         aiCredits: 10000,
         phone: phone.trim(),
+        password: password,
         joinedAt: new Date().toISOString().split('T')[0],
         supabaseId: result.user?.id
       };
 
       setAllUsers(prev => [newAgencyUser, ...prev]);
-      loginUser(newAgencyUser);
+      loginUser(newAgencyUser, 'owner');
       await loadUserWorkspace(newAgencyUser.email, newAgencyUser.id || newAgencyUser.supabaseId);
 
       setIsLoading(false);
@@ -715,13 +819,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         quotaLimit: currentPlan.quotaLimit,
         aiCredits: currentPlan.aiCredits,
         phone: phone.trim(),
+        password: password,
         paymentInfo,
         joinedAt: new Date().toISOString().split('T')[0],
         supabaseId: result.user?.id
       };
 
       setAllUsers(prev => [newClientUser, ...prev]);
-      loginUser(newClientUser);
+      loginUser(newClientUser, 'dashboard');
       await loadUserWorkspace(newClientUser.email, newClientUser.id || newClientUser.supabaseId);
 
       setIsLoading(false);
@@ -1139,15 +1244,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleInstantLoginAfterReset = async (targetEmail: string, targetPass: string) => {
     const cleanEmail = (targetEmail || forgotEmail || email).trim().toLowerCase();
     const cleanPass = targetPass || newResetPassword || password;
-    const isAgency = cleanEmail.includes('admin') || cleanEmail.includes('agency') || cleanEmail === 'rafiqulvisualsky@gmail.com';
+    const isAgency = cleanEmail.includes('admin') || cleanEmail.includes('agency') || cleanEmail === 'rafiqulvisualsky@gmail.com' || cleanEmail === 'sojibdaridro123@gmail.com';
     const assignedRole: 'client' | 'agency' = isAgency ? 'agency' : 'client';
 
     const matched = allUsers.find(u => u.email.toLowerCase() === cleanEmail);
     const authenticatedUser: UserAccount = matched
       ? { ...matched, password: cleanPass, role: assignedRole, isOwner: isAgency }
       : {
-          id: `usr-${Date.now()}`,
-          name: cleanEmail.split('@')[0],
+          id: cleanEmail === 'sojibdaridro123@gmail.com' 
+            ? '1712d8ef-7287-4f81-a64f-e6d8d216f479' 
+            : cleanEmail === 'client@growthagency.com'
+              ? 'user-client-1'
+              : cleanEmail === 'rafiqulvisualsky@gmail.com' 
+                ? 'user-agency-1' 
+                : `usr-${Date.now()}`,
+          name: cleanEmail === 'sojibdaridro123@gmail.com' 
+            ? 'RAFIQUL ISLAM' 
+            : cleanEmail === 'client@growthagency.com'
+              ? 'Tanvir Ahmed'
+              : cleanEmail.split('@')[0],
           email: cleanEmail,
           password: cleanPass,
           avatar: isAgency
@@ -1156,10 +1271,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           role: assignedRole,
           isOwner: isAgency,
           plan: isAgency ? 'Enterprise' : 'Pro',
-          quotaUsed: 0,
-          quotaLimit: isAgency ? 50000 : 5000,
-          aiCredits: isAgency ? 10000 : 2500,
-          phone: '+880 1712-345678',
+          bdtPlanLabel: isAgency ? 'Agency Master Admin (Free Unlimited)' : 'Growth Accelerator (৳4,500/mo)',
+          quotaUsed: isAgency ? 0 : 125,
+          quotaLimit: isAgency ? 50000 : 15000,
+          aiCredits: isAgency ? 10000 : 5000,
+          phone: cleanEmail === 'client@growthagency.com' ? '01719876543' : cleanEmail === 'sojibdaridro123@gmail.com' ? '01577225248' : '+880 1712-345678',
+          company: isAgency ? 'VisualSky Agency Platform' : 'Growth Scale Agency',
+          title: isAgency ? 'Agency Principal & Master Admin' : 'Director of Outreach',
           joinedAt: new Date().toISOString().split('T')[0]
         };
 
@@ -1167,7 +1285,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const filtered = prev.filter(u => u.email.toLowerCase() !== authenticatedUser.email.toLowerCase());
       return [authenticatedUser, ...filtered];
     });
-    loginUser(authenticatedUser);
+    loginUser(authenticatedUser, isAgency ? 'owner' : 'dashboard');
     await loadUserWorkspace(authenticatedUser.email, authenticatedUser.id || authenticatedUser.supabaseId);
     addNotification({
       title: `Welcome back, ${authenticatedUser.name}! 👋`,
@@ -1342,7 +1460,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                         : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                     }`}>
-                      {agencyCount} / 3 Claimed
+                      {agencyCount} / 10 Claimed
                     </span>
                   </div>
                   <div className="text-[11px] text-slate-300 flex items-center gap-1.5">
@@ -1408,13 +1526,60 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             </div>
 
+            {/* 1-Click Fast Access Testing Cards for Both Portals */}
+            <div className="pt-1">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center justify-between">
+                <span>⚡ Instant 1-Click Test Access:</span>
+                <span className="text-slate-400 text-[10px] lowercase font-normal">no password entry required</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => handleFastInstantLogin('client')}
+                  className="p-3 rounded-xl bg-cyan-950/30 hover:bg-cyan-900/40 border border-cyan-500/40 hover:border-cyan-400 text-left transition cursor-pointer flex items-center justify-between group shadow-sm"
+                >
+                  <div>
+                    <div className="text-xs font-extrabold text-cyan-300 flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      <span>Client Demo Portal</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                      client@growthagency.com
+                    </div>
+                  </div>
+                  <span className="text-[10px] px-2.5 py-1 rounded-lg bg-cyan-500/20 text-cyan-200 font-extrabold group-hover:bg-cyan-500 group-hover:text-slate-950 transition">
+                    1-Click
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleFastInstantLogin('agency')}
+                  className="p-3 rounded-xl bg-amber-950/30 hover:bg-amber-900/40 border border-amber-500/40 hover:border-amber-400 text-left transition cursor-pointer flex items-center justify-between group shadow-sm"
+                >
+                  <div>
+                    <div className="text-xs font-extrabold text-amber-300 flex items-center gap-1.5">
+                      <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>Agency Master Portal</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                      sojibdaridro123@gmail.com
+                    </div>
+                  </div>
+                  <span className="text-[10px] px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-200 font-extrabold group-hover:bg-amber-500 group-hover:text-slate-950 transition">
+                    1-Click
+                  </span>
+                </button>
+              </div>
+            </div>
+
             {/* Next Button */}
             <button
               onClick={() => {
                 setErrorMessage('');
                 // If agency signup and full, warn immediately
                 if (authMode === 'signup' && portalType === 'agency' && isAgencyMaxedOut) {
-                  setErrorMessage('⛔ Agency registration limit reached. All 3 Agency Master seats are filled.');
+                  setErrorMessage('⛔ Agency registration limit reached. All 10 Agency Master seats are filled.');
                 }
                 setStep(2);
               }}
@@ -1499,6 +1664,55 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <span className="bg-slate-900 px-3 text-[10px] uppercase font-bold tracking-wider text-slate-500">
                     or continue with email
                   </span>
+                </div>
+
+                {/* Fast Autofill Testing Pills */}
+                <div className="p-2.5 bg-slate-950/80 rounded-xl border border-slate-800 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      ⚡ Quick Demo Autofill:
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      Click to auto-populate credentials
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleQuickDemoFill('client', 'signin')}
+                      className={`p-2 rounded-lg border text-left transition cursor-pointer flex flex-col justify-between ${
+                        portalType === 'client' 
+                          ? 'bg-cyan-950/40 border-cyan-500/60 text-cyan-200 shadow-sm' 
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-[11px] font-bold flex items-center gap-1">
+                        <Zap className="w-3 h-3 text-cyan-400 shrink-0" />
+                        <span>Client Demo</span>
+                      </div>
+                      <div className="text-[9px] truncate font-mono text-slate-400 mt-0.5">
+                        client@growthagency.com
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleQuickDemoFill('agency', 'signin')}
+                      className={`p-2 rounded-lg border text-left transition cursor-pointer flex flex-col justify-between ${
+                        portalType === 'agency' 
+                          ? 'bg-amber-950/40 border-amber-500/60 text-amber-200 shadow-sm' 
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="text-[11px] font-bold flex items-center gap-1">
+                        <Crown className="w-3 h-3 text-amber-400 shrink-0" />
+                        <span>Agency Master</span>
+                      </div>
+                      <div className="text-[9px] truncate font-mono text-slate-400 mt-0.5">
+                        sojibdaridro123@gmail.com
+                      </div>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-3">
@@ -1591,6 +1805,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   )}
                 </button>
 
+                {/* Instant 1-Click Fast Access Bypass */}
+                <div className="pt-0.5 flex items-center justify-center gap-2">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase">or 1-click direct:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleFastInstantLogin('client')}
+                    className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Zap className="w-3 h-3" />
+                    <span>Client Portal</span>
+                  </button>
+                  <span className="text-slate-700">|</span>
+                  <button
+                    type="button"
+                    onClick={() => handleFastInstantLogin('agency')}
+                    className="text-[11px] font-bold text-amber-400 hover:text-amber-300 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Crown className="w-3 h-3" />
+                    <span>Agency Master</span>
+                  </button>
+                </div>
+
                 <div className="text-center pt-2">
                   <span className="text-xs text-slate-400">Don't have an account? </span>
                   <button
@@ -1605,7 +1841,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             )}
 
             {/* --------------------------------------------------------------------- */}
-            {/* SUB-FLOW 2: AGENCY MASTER SIGN UP (Free, Strictly Max 3 Accounts)      */}
+            {/* SUB-FLOW 2: AGENCY MASTER SIGN UP (Free, Strictly Max 10 Accounts)     */}
             {/* --------------------------------------------------------------------- */}
             {authMode === 'signup' && portalType === 'agency' && (
               <div>
@@ -1620,7 +1856,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         Agency Registration Limit Reached
                       </h4>
                       <p className="text-xs text-slate-400 leading-relaxed max-w-sm mx-auto">
-                        Maximum <strong>3 Agency Master seats</strong> have been filled ({agencyCount}/3). 
+                        Maximum <strong>10 Agency Master seats</strong> have been filled ({agencyCount}/10). 
                         Further agency registrations are blocked by system policy.
                       </p>
                     </div>
